@@ -8,4 +8,12 @@ node_modules
 coverage
 supabase/.branches
 supabase/.temp
-*.log
+*.logabutaher
+abutaher.pub
+node_modules/
+.next/
+tsconfig.tsbuildinfo
+abutaher
+abutaher.pub
+*.DS_Store
+tsconfig.tsbuildinfo
