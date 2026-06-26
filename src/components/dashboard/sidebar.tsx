@@ -102,7 +102,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className={cn("flex h-16 items-center border-b border-white/10 px-4", collapsed && "justify-center")}>
           <Link href="/dashboard" className="flex items-center gap-3 text-white">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-fuchsia-500/20 text-cyan-300">
-              <Sparkles className="h-4 w-4" />
+              <img src="/logo_1.png" alt="CogniFlow Logo" className="h-5 w-5 object-contain" />
             </span>
             {!collapsed && <span className="font-display text-lg font-semibold tracking-wide">CogniFlow</span>}
           </Link>

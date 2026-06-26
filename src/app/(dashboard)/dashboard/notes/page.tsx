@@ -364,8 +364,8 @@ export default function NotesPage() {
                   key={n.id}
                   onClick={() => handleSelectNote(n)}
                   className={`cursor-pointer rounded-xl border p-3 text-left transition ${selectedNote?.id === n.id
-                      ? "border-cyan-400 bg-cyan-400/5 text-white shadow-sm"
-                      : "border-transparent text-slate-400 hover:bg-white/5 hover:text-white"
+                    ? "border-cyan-400 bg-cyan-400/5 text-white shadow-sm"
+                    : "border-transparent text-slate-400 hover:bg-white/5 hover:text-white"
                     }`}
                 >
                   <div className="flex items-start justify-between gap-2">

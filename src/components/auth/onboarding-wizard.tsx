@@ -263,7 +263,7 @@ export function OnboardingWizard({ profile, email }: OnboardingWizardProps) {
                         </SelectTrigger>
                         <SelectContent>
                           {Array.from({ length: 12 }, (_, i) => (
-                            <SelectItem key={i + 1} value={String(i + 1)}>
+                            <SelectItem key={`semester-${i + 1}`} value={String(i + 1)}>
                               Semester {i + 1}
                             </SelectItem>
                           ))}

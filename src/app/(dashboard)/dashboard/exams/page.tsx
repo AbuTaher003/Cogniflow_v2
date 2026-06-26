@@ -20,6 +20,7 @@ export default function ExamsPage() {
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
+  const [customSubjectName, setCustomSubjectName] = useState("");
 
   // Modals state
   const [examModalOpen, setExamModalOpen] = useState(false);
@@ -139,6 +140,7 @@ export default function ExamsPage() {
       setAchievedScore("");
       setExamStatus("upcoming");
     }
+    setCustomSubjectName("");
     setExamModalOpen(true);
   };
 
@@ -147,9 +149,46 @@ export default function ExamsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    let subId = examSubjectId;
+    let currentSubjectsList = [...subjects];
+
+    if (examSubjectId === "custom") {
+      if (!customSubjectName.trim()) {
+        alert("Please enter a custom subject name.");
+        return;
+      }
+
+      // Check if this subject already exists (case-insensitive)
+      const existing = subjects.find(s => s.name.toLowerCase() === customSubjectName.trim().toLowerCase());
+      if (existing) {
+        subId = existing.id;
+      } else {
+        const { data: newSub, error: subError } = await supabase
+          .from("subjects")
+          .insert({
+            user_id: user.id,
+            name: customSubjectName.trim(),
+            color: "#7C3AED", // default color
+            credits: 3 // default credits
+          })
+          .select()
+          .single();
+
+        if (subError) {
+          alert("Error creating custom subject: " + subError.message);
+          return;
+        }
+
+        // Add to local state list
+        setSubjects(prev => [...prev, newSub]);
+        currentSubjectsList.push(newSub);
+        subId = newSub.id;
+      }
+    }
+
     const payload = {
       user_id: user.id,
-      subject_id: examSubjectId,
+      subject_id: subId,
       title: examTitle,
       exam_date: examDate,
       exam_time: examTime || null,
@@ -466,6 +505,7 @@ export default function ExamsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    <SelectItem value="custom">+ Add Custom Subject...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -483,6 +523,17 @@ export default function ExamsPage() {
                 </Select>
               </div>
             </div>
+
+            {examSubjectId === "custom" && (
+              <div className="space-y-1 animate-in fade-in-50 duration-200">
+                <label className="text-xs text-slate-400 font-semibold">Custom Subject Name</label>
+                <Input
+                  placeholder="E.g. Quantum Physics"
+                  value={customSubjectName}
+                  onChange={e => setCustomSubjectName(e.target.value)}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs text-slate-400 font-semibold">Date</label>

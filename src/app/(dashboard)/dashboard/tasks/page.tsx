@@ -28,7 +28,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
-  
+
   // Controls
   const [searchQuery, setSearchQuery] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("all");
@@ -43,6 +43,7 @@ export default function TasksPage() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
   const [taskSubjectId, setTaskSubjectId] = useState("none");
+  const [customSubjectName, setCustomSubjectName] = useState("");
   const [taskStatus, setTaskStatus] = useState("todo");
   const [taskPriority, setTaskPriority] = useState("medium");
   const [taskDueAt, setTaskDueAt] = useState("");
@@ -70,7 +71,7 @@ export default function TasksPage() {
       setLoading(false);
     }
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // HTML5 Drag and Drop Handlers
@@ -112,6 +113,7 @@ export default function TasksPage() {
       setTaskTitle(task.title);
       setTaskDesc(task.description || "");
       setTaskSubjectId(task.subject_id || "none");
+      setCustomSubjectName("");
       setTaskStatus(task.status);
       setTaskPriority(task.priority);
       setTaskDueAt(task.due_at ? task.due_at.split("T")[0] : "");
@@ -121,6 +123,7 @@ export default function TasksPage() {
       setTaskTitle("");
       setTaskDesc("");
       setTaskSubjectId("none");
+      setCustomSubjectName("");
       setTaskStatus("todo");
       setTaskPriority("medium");
       setTaskDueAt("");
@@ -135,7 +138,42 @@ export default function TasksPage() {
     if (!user) return;
 
     const tagsArr = taskTags.split(",").map(t => t.trim()).filter(Boolean);
-    const subId = taskSubjectId === "none" ? null : taskSubjectId;
+    let subId = taskSubjectId === "none" ? null : taskSubjectId;
+    let currentSubjectsList = [...subjects];
+
+    if (taskSubjectId === "custom") {
+      if (!customSubjectName.trim()) {
+        alert("Please enter a custom subject name.");
+        return;
+      }
+
+      // Check if this subject already exists (case-insensitive)
+      const existing = subjects.find(s => s.name.toLowerCase() === customSubjectName.trim().toLowerCase());
+      if (existing) {
+        subId = existing.id;
+      } else {
+        const { data: newSub, error: subError } = await supabase
+          .from("subjects")
+          .insert({
+            user_id: user.id,
+            name: customSubjectName.trim(),
+            color: "#7C3AED", // default color
+            credits: 3 // default credits
+          })
+          .select()
+          .single();
+
+        if (subError) {
+          alert("Error creating custom subject: " + subError.message);
+          return;
+        }
+
+        // Add to local state list
+        setSubjects(prev => [...prev, newSub]);
+        currentSubjectsList.push(newSub);
+        subId = newSub.id;
+      }
+    }
 
     const payload = {
       user_id: user.id,
@@ -154,9 +192,9 @@ export default function TasksPage() {
         .from("tasks")
         .update(payload)
         .eq("id", editingTask.id);
-      
+
       if (!error) {
-        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...payload, subjects: subjects.find(s => s.id === subId) } : t));
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...payload, subjects: currentSubjectsList.find(s => s.id === subId) } : t));
       }
     } else {
       const { data, error } = await supabase
@@ -164,9 +202,9 @@ export default function TasksPage() {
         .insert(payload)
         .select()
         .single();
-      
+
       if (!error && data) {
-        setTasks(prev => [...prev, { ...data, subjects: subjects.find(s => s.id === subId) }]);
+        setTasks(prev => [...prev, { ...data, subjects: currentSubjectsList.find(s => s.id === subId) }]);
       }
     }
     setTaskModalOpen(false);
@@ -316,8 +354,8 @@ export default function TasksPage() {
         {/* Search */}
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <Input 
-            placeholder="Search tasks..." 
+          <Input
+            placeholder="Search tasks..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -375,8 +413,8 @@ export default function TasksPage() {
         {COLUMNS.map(col => {
           const colTasks = filteredTasks.filter(t => t.status === col.id);
           return (
-            <div 
-              key={col.id} 
+            <div
+              key={col.id}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, col.id)}
               className={`flex flex-col rounded-3xl border border-white/5 p-4 min-h-[500px] border-t-4 ${col.color}`}
@@ -407,7 +445,7 @@ export default function TasksPage() {
                       >
                         {/* Task Title */}
                         <h4 className="font-semibold text-xs text-white leading-relaxed truncate">{task.title}</h4>
-                        
+
                         {/* Task description */}
                         {task.description && (
                           <p className="text-[10px] text-slate-500 line-clamp-2 mt-1 leading-normal">{task.description}</p>
@@ -415,7 +453,7 @@ export default function TasksPage() {
 
                         {/* Subject Tag */}
                         {taskSub && (
-                          <span 
+                          <span
                             className="mt-3 inline-block rounded-full px-2 py-0.5 text-[8px] font-bold"
                             style={{ backgroundColor: `${taskSub.color}15`, color: taskSub.color }}
                           >
@@ -426,10 +464,10 @@ export default function TasksPage() {
                         {/* Footer details */}
                         <div className="flex items-center justify-between mt-4 border-t border-white/5 pt-3">
                           {/* Priority badge */}
-                          <Badge 
+                          <Badge
                             variant={
                               (task.priority === "urgent" || task.priority === "high") ? "neon" :
-                              task.priority === "medium" ? "default" : "outline"
+                                task.priority === "medium" ? "default" : "outline"
                             }
                             className="text-[8px] uppercase font-bold"
                           >
@@ -479,9 +517,9 @@ export default function TasksPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-400 font-semibold">Description</label>
-              <textarea 
-                placeholder="Details of the deliverable..." 
-                value={taskDesc} 
+              <textarea
+                placeholder="Details of the deliverable..."
+                value={taskDesc}
                 onChange={e => setTaskDesc(e.target.value)}
                 className="w-full min-h-[80px] rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400/40 focus:outline-none"
               />
@@ -496,6 +534,7 @@ export default function TasksPage() {
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
                     {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    <SelectItem value="custom">+ Add Custom Subject...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -514,6 +553,17 @@ export default function TasksPage() {
                 </Select>
               </div>
             </div>
+
+            {taskSubjectId === "custom" && (
+              <div className="space-y-1 animate-in fade-in-50 duration-200">
+                <label className="text-xs text-slate-400 font-semibold">Custom Subject Name</label>
+                <Input
+                  placeholder="E.g. Computer Networks"
+                  value={customSubjectName}
+                  onChange={e => setCustomSubjectName(e.target.value)}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs text-slate-400 font-semibold">Due Date</label>

@@ -50,7 +50,7 @@ export default function AnalyticsPage() {
       setLoading(false);
     }
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- Calculations ---
@@ -90,10 +90,17 @@ export default function AnalyticsPage() {
       const targetDateStr = targetDate.toISOString().split("T")[0];
 
       const daySessions = focusSessions.filter(
-        s => s.started_at.split("T")[0] === targetDateStr
+        s => s.started_at.split("T")[0] === targetDateStr && s.session_type !== "break"
       );
-      const focusMinutes = daySessions.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
-      
+      const focusMinutes = daySessions.reduce((acc, s) => {
+        let sessionMins = s.duration_minutes || 0;
+        if (!s.ended_at && s.started_at) {
+          const elapsed = Math.floor((new Date().getTime() - new Date(s.started_at).getTime()) / 60000);
+          sessionMins = Math.max(0, elapsed);
+        }
+        return acc + sessionMins;
+      }, 0);
+
       // Add some base random minutes to mock non-timer studies
       const randomMins = Math.floor(Math.sin(idx) * 60) + 120; // 2 hours study base
       const totalMinutes = focusMinutes + Math.max(0, randomMins);
@@ -114,7 +121,7 @@ export default function AnalyticsPage() {
       const targetOffset = (timeRange === "week" ? 6 - idx : 13 - idx);
       const targetDate = new Date(today.getTime() - targetOffset * 86400000);
       const targetDateStr = targetDate.toISOString().split("T")[0];
-      
+
       // Check-in rates (how many checked today)
       const completions = habits.filter(h => h.streak > 0 && Math.random() > 0.3).length; // mock consistency rate
       return {
@@ -197,17 +204,15 @@ export default function AnalyticsPage() {
         <div className="flex border border-white/10 bg-white/5 p-1 rounded-2xl w-fit">
           <button
             onClick={() => setTimeRange("week")}
-            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${
-              timeRange === "week" ? "bg-white/10 text-white" : "text-slate-500 hover:text-white"
-            }`}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${timeRange === "week" ? "bg-white/10 text-white" : "text-slate-500 hover:text-white"
+              }`}
           >
             Past 7 Days
           </button>
           <button
             onClick={() => setTimeRange("month")}
-            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${
-              timeRange === "month" ? "bg-white/10 text-white" : "text-slate-500 hover:text-white"
-            }`}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${timeRange === "month" ? "bg-white/10 text-white" : "text-slate-500 hover:text-white"
+              }`}
           >
             Past 14 Days
           </button>

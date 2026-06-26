@@ -25,6 +25,7 @@ export function QuickActions() {
   // Form Fields
   const [taskTitle, setTaskTitle] = useState("");
   const [taskSubjectId, setTaskSubjectId] = useState("none");
+  const [taskCustomSubjectName, setTaskCustomSubjectName] = useState("");
   const [taskPriority, setTaskPriority] = useState("medium");
   const [taskDueAt, setTaskDueAt] = useState("");
 
@@ -38,6 +39,7 @@ export function QuickActions() {
 
   const [examTitle, setExamTitle] = useState("");
   const [examSubjectId, setExamSubjectId] = useState("");
+  const [examCustomSubjectName, setExamCustomSubjectName] = useState("");
   const [examDate, setExamDate] = useState("");
   const [examType, setExamType] = useState("midterm");
 
@@ -49,9 +51,16 @@ export function QuickActions() {
       setSubjects(data || []);
       if (data && data.length > 0) {
         setExamSubjectId(data[0].id);
+      } else {
+        setExamSubjectId("");
       }
     }
-    if (activeModal) loadSubjects();
+    if (activeModal) {
+      loadSubjects();
+      setTaskCustomSubjectName("");
+      setExamCustomSubjectName("");
+      setTaskSubjectId("none");
+    }
   }, [activeModal, supabase]);
 
   const handleCreateNote = async () => {
@@ -85,10 +94,45 @@ export function QuickActions() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    let subId = taskSubjectId === "none" ? null : taskSubjectId;
+
+    if (taskSubjectId === "custom") {
+      if (!taskCustomSubjectName.trim()) {
+        alert("Please enter a custom subject name.");
+        return;
+      }
+
+      // Check if this subject already exists (case-insensitive)
+      const existing = subjects.find(s => s.name.toLowerCase() === taskCustomSubjectName.trim().toLowerCase());
+      if (existing) {
+        subId = existing.id;
+      } else {
+        const { data: newSub, error: subError } = await supabase
+          .from("subjects")
+          .insert({
+            user_id: user.id,
+            name: taskCustomSubjectName.trim(),
+            color: "#7C3AED", // default color
+            credits: 3 // default credits
+          })
+          .select()
+          .single();
+
+        if (subError) {
+          alert("Error creating custom subject: " + subError.message);
+          return;
+        }
+
+        // Add to local state list
+        setSubjects(prev => [...prev, newSub]);
+        subId = newSub.id;
+      }
+    }
+
     const payload = {
       user_id: user.id,
       title: taskTitle,
-      subject_id: taskSubjectId === "none" ? null : taskSubjectId,
+      subject_id: subId,
       status: "todo",
       priority: taskPriority,
       due_at: taskDueAt ? new Date(taskDueAt).toISOString() : null,
@@ -98,8 +142,11 @@ export function QuickActions() {
     await supabase.from("tasks").insert(payload);
     alert("Task added!");
     setTaskTitle("");
+    setTaskCustomSubjectName("");
+    setTaskSubjectId("none");
     setActiveModal(null);
     setIsOpen(false);
+    window.dispatchEvent(new CustomEvent("dashboard-refresh"));
     router.refresh();
   };
 
@@ -155,9 +202,44 @@ export function QuickActions() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    let subId = examSubjectId;
+
+    if (examSubjectId === "custom") {
+      if (!examCustomSubjectName.trim()) {
+        alert("Please enter a custom subject name.");
+        return;
+      }
+
+      // Check if this subject already exists (case-insensitive)
+      const existing = subjects.find(s => s.name.toLowerCase() === examCustomSubjectName.trim().toLowerCase());
+      if (existing) {
+        subId = existing.id;
+      } else {
+        const { data: newSub, error: subError } = await supabase
+          .from("subjects")
+          .insert({
+            user_id: user.id,
+            name: examCustomSubjectName.trim(),
+            color: "#7C3AED", // default color
+            credits: 3 // default credits
+          })
+          .select()
+          .single();
+
+        if (subError) {
+          alert("Error creating custom subject: " + subError.message);
+          return;
+        }
+
+        // Add to local state list
+        setSubjects(prev => [...prev, newSub]);
+        subId = newSub.id;
+      }
+    }
+
     const payload = {
       user_id: user.id,
-      subject_id: examSubjectId,
+      subject_id: subId,
       title: examTitle,
       exam_date: examDate || new Date().toISOString().split("T")[0],
       exam_type: examType,
@@ -168,6 +250,7 @@ export function QuickActions() {
     await supabase.from("exams").insert(payload);
     alert("Exam added!");
     setExamTitle("");
+    setExamCustomSubjectName("");
     setExamDate("");
     setActiveModal(null);
     setIsOpen(false);
@@ -279,6 +362,7 @@ export function QuickActions() {
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
                     {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    <SelectItem value="custom">+ Add Custom Subject...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -300,6 +384,17 @@ export function QuickActions() {
               <label className="text-xs text-slate-400 font-semibold">Due Date</label>
               <Input type="date" value={taskDueAt} onChange={e => setTaskDueAt(e.target.value)} />
             </div>
+
+            {taskSubjectId === "custom" && (
+              <div className="space-y-1 animate-in fade-in-50 duration-200">
+                <label className="text-xs text-slate-400 font-semibold">Custom Subject Name</label>
+                <Input
+                  placeholder="E.g. Computer Networks"
+                  value={taskCustomSubjectName}
+                  onChange={e => setTaskCustomSubjectName(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setActiveModal(null)}>Cancel</Button>
@@ -411,6 +506,7 @@ export function QuickActions() {
                   </SelectTrigger>
                   <SelectContent>
                     {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    <SelectItem value="custom">+ Add Custom Subject...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -432,6 +528,17 @@ export function QuickActions() {
               <label className="text-xs text-slate-400 font-semibold">Exam Date</label>
               <Input type="date" value={examDate} onChange={e => setExamDate(e.target.value)} />
             </div>
+
+            {examSubjectId === "custom" && (
+              <div className="space-y-1 animate-in fade-in-50 duration-200">
+                <label className="text-xs text-slate-400 font-semibold">Custom Subject Name</label>
+                <Input
+                  placeholder="E.g. Quantum Physics"
+                  value={examCustomSubjectName}
+                  onChange={e => setExamCustomSubjectName(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setActiveModal(null)}>Cancel</Button>

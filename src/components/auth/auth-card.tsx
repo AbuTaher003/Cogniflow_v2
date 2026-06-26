@@ -26,16 +26,18 @@ type AuthMode = "sign-in" | "sign-up";
 // Module-level global lock to guarantee protection against React StrictMode re-mounts,
 // multiple active component instances, and synchronous double invocations.
 let globalAuthLockActive = false;
+let globalSignupRequestInProgress = false;
+let globalSignupRequestActive = false;
 
 export function AuthCard({ mode }: { mode: AuthMode }) {
   const [loading, setLoading] = useState<"email" | "google" | "github" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldownTime, setCooldownTime] = useState<number>(0);
-  
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-  
+
   const isMountedRef = useRef(true);
   const isSubmittingRef = useRef(false);
   const isValidationPendingRef = useRef(false);
@@ -47,13 +49,17 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
     isSubmittingRef.current = false;
     isValidationPendingRef.current = false;
     submitLockRef.current = false;
-    globalAuthLockActive = false;
+    if (!globalSignupRequestActive && !globalSignupRequestInProgress) {
+      globalAuthLockActive = false;
+    }
     return () => {
       isMountedRef.current = false;
       isSubmittingRef.current = false;
       isValidationPendingRef.current = false;
       submitLockRef.current = false;
-      globalAuthLockActive = false;
+      if (!globalSignupRequestActive && !globalSignupRequestInProgress) {
+        globalAuthLockActive = false;
+      }
     };
   }, []);
 
@@ -85,43 +91,80 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
     defaultValues: { email: "", password: "" }
   });
 
-  const isLocked = loading !== null || globalAuthLockActive || cooldownTime > 0;
+  const isLocked =
+    loading !== null ||
+    globalAuthLockActive ||
+    cooldownTime > 0 ||
+    (mode === "sign-up" && (globalSignupRequestInProgress || globalSignupRequestActive));
 
   // Funnel all submission attempts into a single controlled gateset
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (submitLockRef.current || isLocked || isSubmittingRef.current || isValidationPendingRef.current) {
+    if (
+      submitLockRef.current ||
+      isLocked ||
+      isSubmittingRef.current ||
+      isValidationPendingRef.current ||
+      (mode === "sign-up" && (globalSignupRequestInProgress || globalSignupRequestActive))
+    ) {
       e.stopPropagation();
       return;
     }
-    
+
+    if (mode === "sign-up") {
+      globalSignupRequestInProgress = true;
+    }
+
     submitLockRef.current = true;
     isValidationPendingRef.current = true;
-    
+    setLoading("email");
+    setError(null);
+
     form.handleSubmit(
       async (values) => {
         isValidationPendingRef.current = false;
         try {
           await handleEmailAuth(values);
         } catch (err) {
+          setLoading(null);
           submitLockRef.current = false;
+          if (mode === "sign-up") {
+            globalSignupRequestInProgress = false;
+            globalSignupRequestActive = false;
+          }
           console.error("[auth] Submission callback failed:", err);
         }
       },
       (errors) => {
+        setLoading(null);
         isValidationPendingRef.current = false;
         submitLockRef.current = false;
+        if (mode === "sign-up") {
+          globalSignupRequestInProgress = false;
+          globalSignupRequestActive = false;
+        }
       }
     )(e);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      e.key === "Enter" &&
+      (isLocked || (mode === "sign-up" && (globalSignupRequestInProgress || globalSignupRequestActive)))
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
   async function handleEmailAuth(values: AuthValues) {
-    if (isSubmittingRef.current || isLocked) return;
+    if (isSubmittingRef.current) return;
 
     isSubmittingRef.current = true;
     globalAuthLockActive = true;
-    setLoading("email");
-    setError(null);
+    if (mode === "sign-up") {
+      globalSignupRequestActive = true;
+    }
 
     try {
       if (mode === "sign-up") {
@@ -134,7 +177,11 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
           },
         });
 
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current) {
+          globalSignupRequestInProgress = false;
+          globalSignupRequestActive = false;
+          return;
+        }
 
         if (signupResult.error) {
           let msg = signupResult.error.message;
@@ -148,15 +195,31 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
           } else if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already been registered")) {
             msg = "An account with this email already exists. Please sign in instead.";
           }
-          
+
           setError(msg);
           setLoading(null);
           isSubmittingRef.current = false;
           globalAuthLockActive = false;
+          globalSignupRequestInProgress = false;
+          globalSignupRequestActive = false;
           submitLockRef.current = false;
-          
+
           // Initiate cooldown to avoid multiple rapid backend attempts
           setCooldownTime(15);
+          return;
+        }
+
+        // If session is already created (confirmations disabled), proceed to onboarding immediately
+        if (signupResult.data.session) {
+          setLoading(null);
+          isSubmittingRef.current = false;
+          globalSignupRequestInProgress = false;
+          globalSignupRequestActive = false;
+          submitLockRef.current = false;
+
+          globalAuthLockActive = true;
+          setCooldownTime(15);
+          window.location.href = "/onboarding";
           return;
         }
 
@@ -168,10 +231,16 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
 
         // Step 3: Sign in with the created credentials to get a session
         const loginResult = await supabase.auth.signInWithPassword(values);
-        
-        if (!isMountedRef.current) return;
+
+        if (!isMountedRef.current) {
+          globalSignupRequestInProgress = false;
+          globalSignupRequestActive = false;
+          return;
+        }
         setLoading(null);
         isSubmittingRef.current = false;
+        globalSignupRequestInProgress = false;
+        globalSignupRequestActive = false;
         submitLockRef.current = false;
 
         if (loginResult.error) {
@@ -248,16 +317,24 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
             .single();
 
           if (!isMountedRef.current) return;
-          
+
           globalAuthLockActive = true;
           window.location.href = profile?.onboarding_completed ? "/dashboard" : "/onboarding";
         }
       }
     } catch (err: any) {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) {
+        globalSignupRequestInProgress = false;
+        globalSignupRequestActive = false;
+        return;
+      }
       setLoading(null);
       isSubmittingRef.current = false;
       globalAuthLockActive = false;
+      if (mode === "sign-up") {
+        globalSignupRequestInProgress = false;
+        globalSignupRequestActive = false;
+      }
       submitLockRef.current = false;
       console.error("[auth] Unexpected error:", err);
       setError(err?.message || "An unexpected error occurred. Please try again.");
@@ -266,7 +343,7 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
 
   async function handleOAuth(provider: "google" | "github") {
     if (isSubmittingRef.current || isLocked) return;
-    
+
     isSubmittingRef.current = true;
     globalAuthLockActive = true;
     setLoading(provider);
@@ -324,11 +401,12 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
         <form className="space-y-4" onSubmit={handleFormSubmit}>
           <div className="space-y-2">
             <label className="text-sm text-slate-300">Email</label>
-            <Input 
-              type="email" 
-              placeholder="student@university.edu" 
-              {...form.register("email")} 
+            <Input
+              type="email"
+              placeholder="student@university.edu"
+              {...form.register("email")}
               disabled={isLocked}
+              onKeyDown={handleKeyDown}
             />
             {form.formState.errors.email ? <p className="text-sm text-rose-300">{form.formState.errors.email.message}</p> : null}
           </div>
@@ -342,11 +420,12 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
                 </Link>
               )}
             </div>
-            <Input 
-              type="password" 
-              placeholder="Minimum 8 characters" 
-              {...form.register("password")} 
+            <Input
+              type="password"
+              placeholder="Minimum 8 characters"
+              {...form.register("password")}
               disabled={isLocked}
+              onKeyDown={handleKeyDown}
             />
             {form.formState.errors.password ? (
               <p className="text-sm text-rose-300">{form.formState.errors.password.message}</p>
@@ -374,19 +453,19 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
             </div>
           ) : null}
 
-          <Button 
-            className="w-full" 
-            size="lg" 
-            type="submit" 
-            variant="primary" 
+          <Button
+            className="w-full"
+            size="lg"
+            type="submit"
+            variant="primary"
             disabled={isLocked}
           >
             {loading === "email" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
             {cooldownTime > 0 && mode === "sign-up"
               ? `Please wait ${cooldownTime}s...`
               : mode === "sign-in"
-              ? "Continue with email"
-              : "Create account"}
+                ? "Continue with email"
+                : "Create account"}
           </Button>
         </form>
 
@@ -397,21 +476,21 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Button 
-            variant="secondary" 
-            size="lg" 
-            onClick={() => handleOAuth("google")} 
-            type="button" 
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => handleOAuth("google")}
+            type="button"
             disabled={isLocked}
           >
             {loading === "google" ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="h-2.5 w-2.5 rounded-full bg-cyan-300" />}
             Google OAuth
           </Button>
-          <Button 
-            variant="secondary" 
-            size="lg" 
-            onClick={() => handleOAuth("github")} 
-            type="button" 
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => handleOAuth("github")}
+            type="button"
             disabled={isLocked}
           >
             {loading === "github" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}

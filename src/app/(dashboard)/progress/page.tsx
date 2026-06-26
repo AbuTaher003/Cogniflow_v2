@@ -26,6 +26,7 @@ export default function ProgressPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any[]>([]);
   const [cgpaPredictions, setCgpaPredictions] = useState<any[]>([]);
+  const [focusSessions, setFocusSessions] = useState<any[]>([]);
 
   const supabase = createClient();
 
@@ -85,6 +86,14 @@ export default function ProgressPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
       setCgpaPredictions(cgpaPredict || []);
+
+      // Fetch Focus Sessions
+      const { data: focusData } = await supabase
+        .from("focus_sessions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("started_at", { ascending: false });
+      setFocusSessions(focusData || []);
 
       setLoading(false);
     }
@@ -166,27 +175,49 @@ export default function ProgressPage() {
     ];
   }, [projectedCGPA]);
 
+  const last7Days = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d;
+    });
+  }, []);
+
   // 4. Study hours and task completion charts data
   const weeklyAnalyticsData = useMemo(() => {
-    if (analytics.length > 0) {
-      return analytics.map((a) => ({
-        date: new Date(a.metric_date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-        hours: Math.round((a.study_minutes / 60) * 10) / 10,
-        tasks: a.completed_tasks,
-        score: a.productivity_score,
-      }));
-    }
-    // default visual mockup data
-    return [
-      { date: "Mon", hours: 2.5, tasks: 2, score: 65 },
-      { date: "Tue", hours: 4.0, tasks: 4, score: 85 },
-      { date: "Wed", hours: 1.5, tasks: 1, score: 50 },
-      { date: "Thu", hours: 5.5, tasks: 5, score: 95 },
-      { date: "Fri", hours: 3.0, tasks: 3, score: 75 },
-      { date: "Sat", hours: 2.0, tasks: 1, score: 60 },
-      { date: "Sun", hours: 3.5, tasks: 4, score: 80 },
-    ];
-  }, [analytics]);
+    return last7Days.map((date) => {
+      const dateStr = date.toDateString();
+
+      // Calculate live study minutes for this day (excluding breaks, including ongoing)
+      const studyMins = focusSessions
+        .filter((s) => s.started_at && new Date(s.started_at).toDateString() === dateStr && s.session_type !== "break")
+        .reduce((sum, s) => {
+          let sessionMins = s.duration_minutes || 0;
+          if (!s.ended_at && s.started_at) {
+            const elapsed = Math.floor((new Date().getTime() - new Date(s.started_at).getTime()) / 60000);
+            sessionMins = Math.max(0, elapsed);
+          }
+          return sum + sessionMins;
+        }, 0);
+
+      // Calculate live completed tasks for this day
+      const completedTasks = tasks.filter(
+        (t) => t.status === "done" && t.completed_at && new Date(t.completed_at).toDateString() === dateStr
+      ).length;
+
+      // Find productivity score from matching analytics record if available
+      const dateIsoStr = date.toISOString().split("T")[0];
+      const analyticsRow = analytics.find((a) => a.metric_date === dateIsoStr);
+      const score = analyticsRow ? Number(analyticsRow.productivity_score) : 0;
+
+      return {
+        date: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        hours: Math.round((studyMins / 60) * 10) / 10,
+        tasks: completedTasks,
+        score: score,
+      };
+    });
+  }, [analytics, focusSessions, tasks, last7Days]);
 
   // 5. Subject Cards Calculation
   const subjectProgressCards = useMemo(() => {

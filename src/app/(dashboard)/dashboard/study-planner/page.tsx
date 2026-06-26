@@ -46,7 +46,40 @@ export default function StudyPlannerPage() {
 
   const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>({});
 
+  // Weekly target settings state
+  const [weeklyTarget, setWeeklyTarget] = useState<number>(20);
+  const [isEditingTarget, setIsEditingTarget] = useState(false);
+  const [inputTarget, setInputTarget] = useState<string>("20");
+  const [savingTarget, setSavingTarget] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
+
   const supabase = createClient();
+
+  const handleSaveTarget = async () => {
+    const val = Number(inputTarget);
+    if (isNaN(val) || val < 1 || val > 100) {
+      setTargetError("Target must be between 1 and 100 hours.");
+      return;
+    }
+    setTargetError(null);
+    setSavingTarget(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from("user_preferences")
+      .update({ weekly_study_target: val })
+      .eq("user_id", user.id);
+
+    setSavingTarget(false);
+    if (!error) {
+      setWeeklyTarget(val);
+      setIsEditingTarget(false);
+    } else {
+      setTargetError(error.message);
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -65,8 +98,23 @@ export default function StudyPlannerPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
 
+      const { data: prefsData } = await supabase
+        .from("user_preferences")
+        .select("weekly_study_target")
+        .eq("user_id", user.id)
+        .single();
+
       setSubjects(subjectsData || []);
       setChapters(chaptersData || []);
+      
+      if (prefsData) {
+        setWeeklyTarget(prefsData.weekly_study_target);
+        setInputTarget(String(prefsData.weekly_study_target));
+      } else {
+        // Fallback default starting value: 20 hours
+        setWeeklyTarget(20);
+        setInputTarget("20");
+      }
       
       // Auto expand first subject
       if (subjectsData && subjectsData.length > 0) {
@@ -235,11 +283,13 @@ export default function StudyPlannerPage() {
     return subChaps.reduce((acc, c) => acc + c.estimated_minutes, 0);
   };
 
-  // Weekly Goals: Mock study target hours per week (e.g. 20 hours target)
-  const targetWeeklyHours = 20;
+  // Weekly Goals: Custom study target hours per week
+  const targetWeeklyHours = weeklyTarget;
   const totalStudyMinutes = chapters.reduce((acc, c) => acc + c.estimated_minutes, 0);
   const totalStudyHours = Math.round((totalStudyMinutes / 60) * 10) / 10;
-  const weeklyGoalPct = Math.min(Math.round((totalStudyHours / targetWeeklyHours) * 100), 100);
+  const weeklyGoalPct = targetWeeklyHours > 0
+    ? Math.min(Math.round((totalStudyHours / targetWeeklyHours) * 100), 100)
+    : 0;
 
   if (loading) {
     return (
@@ -274,18 +324,88 @@ export default function StudyPlannerPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold uppercase tracking-wider text-slate-400">Weekly Study Target</CardTitle>
-              <Clock className="h-4 w-4 text-cyan-400" />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setIsEditingTarget(!isEditingTarget);
+                    setInputTarget(String(weeklyTarget));
+                    setTargetError(null);
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:bg-white/10 hover:text-white transition duration-200"
+                  title="Edit study target"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
+                <Clock className="h-4 w-4 text-cyan-400" />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-white">{totalStudyHours} hrs</span>
-              <span className="text-xs text-slate-500">/ {targetWeeklyHours} hrs weekly</span>
-            </div>
-            <Progress value={weeklyGoalPct} className="h-2 mt-3 bg-white/5" />
-            <p className="mt-2 text-xs text-slate-400">
-              {weeklyGoalPct}% of targeted semester hours mapped to chapters.
-            </p>
+            {!isEditingTarget ? (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-white">{totalStudyHours} hrs</span>
+                  <span className="text-xs text-slate-500">/ {targetWeeklyHours} hrs weekly</span>
+                </div>
+                <Progress value={weeklyGoalPct} className="h-2 mt-3 bg-white/5" />
+                <p className="mt-2 text-xs text-slate-400">
+                  {weeklyGoalPct}% of targeted semester hours mapped to chapters.
+                </p>
+              </>
+            ) : (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-300">Target (hrs)</span>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={inputTarget}
+                    onChange={(e) => {
+                      setInputTarget(e.target.value);
+                      const val = Number(e.target.value);
+                      if (!isNaN(val) && val >= 1 && val <= 100) {
+                        setTargetError(null);
+                      }
+                    }}
+                    className="w-20 h-8 text-right text-xs bg-slate-900 border-white/10 rounded-lg text-white"
+                  />
+                </div>
+                
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={Number(inputTarget) || 20}
+                  onChange={(e) => setInputTarget(e.target.value)}
+                  className="w-full accent-cyan-400 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                />
+
+                {targetError && (
+                  <p className="text-[10px] text-rose-300 font-semibold">{targetError}</p>
+                )}
+
+                <div className="flex justify-end gap-1.5 pt-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setIsEditingTarget(false)}
+                    className="h-7 text-[10px] px-2.5 rounded-lg"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={handleSaveTarget}
+                    disabled={savingTarget}
+                    className="h-7 text-[10px] px-3.5 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 border-none transition"
+                  >
+                    {savingTarget ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

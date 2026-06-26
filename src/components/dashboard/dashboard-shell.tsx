@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
@@ -10,6 +11,8 @@ import { createClient } from "@/lib/supabase/client";
 
 import { SearchModal } from "@/components/dashboard/search-modal";
 import { QuickActions } from "@/components/dashboard/quick-actions";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { HelpSystem } from "@/components/dashboard/help-system";
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -17,6 +20,7 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({ children, user }: DashboardShellProps) {
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -80,31 +84,34 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+    <TooltipProvider delayDuration={400}>
+      <div className="min-h-screen bg-slate-950 text-white">
+        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
 
-      <div className={cn("flex flex-col transition-all duration-300", collapsed ? "lg:pl-[68px]" : "lg:pl-[240px]")}>
-        <Topbar
-          user={user}
-          theme={theme === "light" ? "light" : "dark"}
-          onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
-          notifications={notifications}
-          notificationCount={unreadCount}
-          onMarkAsRead={handleMarkAsRead}
-          onDeleteNotification={handleDeleteNotification}
-          onSearchClick={() => setSearchOpen(true)}
-        />
+        <div className={cn("flex flex-col transition-all duration-300", collapsed ? "lg:pl-[68px]" : "lg:pl-[240px]")}>
+          <Topbar
+            user={user}
+            theme={theme === "light" ? "light" : "dark"}
+            onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+            notifications={notifications}
+            notificationCount={unreadCount}
+            onMarkAsRead={handleMarkAsRead}
+            onDeleteNotification={handleDeleteNotification}
+            onSearchClick={() => setSearchOpen(true)}
+          />
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mb-6">
-            <Breadcrumbs />
-          </div>
-          {children}
-        </main>
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mb-6">
+              <Breadcrumbs />
+            </div>
+            {children}
+          </main>
+        </div>
+
+        <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+        <QuickActions />
+        <HelpSystem currentPath={pathname} />
       </div>
-
-      <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
-      <QuickActions />
-    </div>
+    </TooltipProvider>
   );
 }

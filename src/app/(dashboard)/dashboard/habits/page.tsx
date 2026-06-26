@@ -19,7 +19,7 @@ export default function HabitsPage() {
   const [loading, setLoading] = useState(true);
   const [habits, setHabits] = useState<any[]>([]);
   const [habitLogs, setHabitLogs] = useState<any[]>([]);
-  
+
   // Modals state
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<any>(null);
@@ -54,7 +54,7 @@ export default function HabitsPage() {
       setLoading(false);
     }
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Toggle log completion for TODAY
@@ -200,7 +200,7 @@ export default function HabitsPage() {
   const getHeatmapGrid = () => {
     const grid = [];
     const today = new Date();
-    
+
     // Create 24 columns representing weeks
     for (let w = 23; w >= 0; w--) {
       const weekCols = [];
@@ -209,7 +209,7 @@ export default function HabitsPage() {
         const offset = (w * 7) + (6 - d);
         const cellDate = new Date(today.getTime() - offset * 86400000);
         const cellDateStr = cellDate.toISOString().split("T")[0];
-        
+
         // Count completions on this date
         const dayLogs = habitLogs.filter(l => l.completed_at.split("T")[0] === cellDateStr);
         const dayCompletions = dayLogs.length;
@@ -371,7 +371,7 @@ export default function HabitsPage() {
               {habits.map(habit => {
                 const checked = isCompletedToday(habit.id);
                 return (
-                  <div 
+                  <div
                     key={habit.id}
                     className="flex items-center justify-between rounded-2xl border border-white/5 bg-slate-950/40 p-4 transition-all hover:bg-slate-950/60"
                   >
@@ -383,7 +383,7 @@ export default function HabitsPage() {
                       {habit.description && (
                         <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">{habit.description}</p>
                       )}
-                      
+
                       <div className="flex items-center gap-3 mt-3 text-[10px]">
                         <span className="text-slate-500 uppercase font-semibold">{habit.frequency}</span>
                         <span className="text-slate-500">•</span>
@@ -397,24 +397,23 @@ export default function HabitsPage() {
                       {/* Check Button */}
                       <button
                         onClick={() => handleToggleHabit(habit)}
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border transition-all duration-150 ${
-                          checked 
-                            ? "bg-emerald-500 text-slate-950 border-emerald-500 scale-105" 
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border transition-all duration-150 ${checked
+                            ? "bg-emerald-500 text-slate-950 border-emerald-500 scale-105"
                             : "border-white/10 text-slate-500 hover:border-cyan-400 hover:text-white"
-                        }`}
+                          }`}
                       >
                         <Check className="h-4.5 w-4.5" />
                       </button>
 
                       {/* Edit actions */}
                       <div className="flex flex-col gap-1">
-                        <button 
+                        <button
                           onClick={() => handleOpenHabitModal(habit)}
                           className="p-1 rounded text-slate-500 hover:text-white transition"
                         >
                           <Edit2 className="h-3 w-3" />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeleteHabit(habit.id)}
                           className="p-1 rounded text-rose-500 hover:text-rose-400 transition"
                         >
@@ -479,13 +478,12 @@ export default function HabitsPage() {
               <label className="text-xs text-slate-400 font-semibold">Intensity Color Tag</label>
               <div className="flex gap-2.5">
                 {["#22C55E", "#3B82F6", "#F59E0B", "#EC4899", "#8B5CF6", "#EF4444"].map(c => (
-                  <button 
+                  <button
                     key={c}
                     type="button"
                     onClick={() => setHabitColor(c)}
-                    className={`h-7 w-7 rounded-full transition hover:scale-105 border-2 ${
-                      habitColor === c ? "border-white scale-105" : "border-transparent"
-                    }`}
+                    className={`h-7 w-7 rounded-full transition hover:scale-105 border-2 ${habitColor === c ? "border-white scale-105" : "border-transparent"
+                      }`}
                     style={{ backgroundColor: c }}
                   />
                 ))}

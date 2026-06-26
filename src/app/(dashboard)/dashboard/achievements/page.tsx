@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { BADGES, getXpProgress, getLevelFromXP, fetchUserProgress } from "@/lib/achievements";
+import { BADGES, getXpProgress, getLevelFromXP, fetchUserProgress, unlockAchievement } from "@/lib/achievements";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface HistoryLog {
@@ -27,6 +27,7 @@ export default function AchievementsPage() {
   const [unlockedKeys, setUnlockedKeys] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryLog[]>([]);
   const [streak, setStreak] = useState(0);
+  const [progress, setProgress] = useState<Record<string, { current: number; target: number }>>({});
 
   const supabase = createClient();
 
@@ -45,7 +46,7 @@ export default function AchievementsPage() {
       // Fetch Profile for XP / Level
       const { data: profile } = await supabase
         .from("profiles")
-        .select("xp, level")
+        .select("xp, level, onboarding_completed")
         .eq("id", user.id)
         .single();
 
@@ -66,11 +67,88 @@ export default function AchievementsPage() {
         ? Math.max(...habits.map((h: any) => h.streak || 0))
         : 0;
 
+      // Fetch all counts for badge validation
+      const [
+        { count: subjectsCount },
+        { count: chaptersCount },
+        { count: tasksCount },
+        { count: focusCount },
+        { count: resumesCount },
+        { count: internshipsCount },
+        { count: cpCount },
+        { count: kaggleCount },
+      ] = await Promise.all([
+        supabase.from("subjects").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("chapters").select("*", { count: "exact", head: true }).eq("user_id", user.id).or("status.eq.completed,progress_pct.eq.100"),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "done"),
+        supabase.from("focus_sessions").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("session_type", "pomodoro").not("ended_at", "is", null),
+        supabase.from("resumes").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("internship_applications").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("cp_problems").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("kaggle_entries").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("entry_type", "competition"),
+      ]);
+
+      const badgeProgress: Record<string, { current: number; target: number }> = {
+        first_steps: { current: profile?.onboarding_completed ? 1 : 0, target: 1 },
+        subject_creator: { current: subjectsCount || 0, target: 1 },
+        chapter_conqueror: { current: chaptersCount || 0, target: 1 },
+        task_slayer: { current: tasksCount || 0, target: 5 },
+        focus_guru: { current: focusCount || 0, target: 1 },
+        streak_master: { current: maxStreak, target: 5 },
+        resume_builder: { current: resumesCount || 0, target: 1 },
+        intern_hunter: { current: internshipsCount || 0, target: 1 },
+        cp_coder: { current: cpCount || 0, target: 1 },
+        kaggle_competitor: { current: kaggleCount || 0, target: 1 },
+      };
+
+      setProgress(badgeProgress);
+
+      const currentUnlocked = (unlocked || []).map((a: any) => a.achievement_key);
+      let didUnlockNew = false;
+
+      for (const badge of BADGES) {
+        const prog = badgeProgress[badge.id];
+        if (prog && prog.current >= prog.target) {
+          if (!currentUnlocked.includes(badge.id)) {
+            // Unlock it!
+            const res = await unlockAchievement(badge.id);
+            if (res && res.success) {
+              didUnlockNew = true;
+            }
+          }
+        }
+      }
+
+      let finalXp = profile?.xp || 0;
+      let finalLevel = profile?.level || getLevelFromXP(finalXp);
+      let finalUnlocked = unlocked || [];
+
+      if (didUnlockNew) {
+        const { data: updatedProfile } = await supabase
+          .from("profiles")
+          .select("xp, level")
+          .eq("id", user.id)
+          .single();
+        if (updatedProfile) {
+          finalXp = updatedProfile.xp;
+          finalLevel = updatedProfile.level;
+        }
+
+        const { data: updatedUnlocked } = await supabase
+          .from("user_achievements")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("unlocked_at", { ascending: false });
+        if (updatedUnlocked) {
+          finalUnlocked = updatedUnlocked;
+        }
+      }
+
       setStreak(maxStreak);
-      setXp(profile?.xp || 0);
-      setLevel(profile?.level || getLevelFromXP(profile?.xp || 0));
-      setUnlockedKeys((unlocked || []).map((a: any) => a.achievement_key));
-      setHistory(unlocked || []);
+      setXp(finalXp);
+      setLevel(finalLevel);
+      setUnlockedKeys(finalUnlocked.map((a: any) => a.achievement_key));
+      setHistory(finalUnlocked);
     } catch (error) {
       console.error("Failed to load achievements data", error);
     } finally {
@@ -205,6 +283,22 @@ export default function AchievementsPage() {
                 <div className="mt-4">
                   <h3 className={`text-sm font-semibold transition ${isUnlocked ? "text-white" : "text-slate-500"}`}>{badge.title}</h3>
                   <p className="text-xs text-slate-400 mt-1 line-clamp-2 min-h-[32px]">{badge.description}</p>
+                  
+                  {/* Badge Progress Bar */}
+                  {(() => {
+                    const prog = progress[badge.id] || { current: 0, target: 1 };
+                    const displayCurrent = Math.min(prog.current, prog.target);
+                    const pct = Math.min((prog.current / prog.target) * 100, 100);
+                    return (
+                      <div className="mt-3 space-y-1">
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>Progress</span>
+                          <span>{displayCurrent} / {prog.target}</span>
+                        </div>
+                        <Progress value={pct} className="h-1.5 bg-white/5" />
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
                   <span className="capitalize">{badge.category}</span>

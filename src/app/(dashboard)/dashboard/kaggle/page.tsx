@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Plus, Edit2, Trash2, Search, Database, BookOpen, BarChart3, Medal, Users, Calendar } from "lucide-react";
+import { Trophy, Plus, Edit2, Trash2, Search, Database, BookOpen, BarChart3, Medal, Users, Calendar, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ export default function KaggleTrackerPage() {
   const [fMedal, setFMedal] = useState("none"); const [fTeam, setFTeam] = useState("1");
   const [fDesc, setFDesc] = useState(""); const [fStart, setFStart] = useState("");
   const [fEnd, setFEnd] = useState("");
+  const [fUrlError, setFUrlError] = useState("");
 
   const supabase = createClient();
 
@@ -63,15 +64,37 @@ export default function KaggleTrackerPage() {
       setEditing(null); setFTitle(""); setFType("competition"); setFUrl(""); setFStatus("active");
       setFMedal("none"); setFTeam("1"); setFDesc(""); setFStart(""); setFEnd("");
     }
+    setFUrlError("");
     setModalOpen(true);
   }
 
   async function handleSave() {
     if (!fTitle.trim()) return;
+
+    // Validate URL format and presence
+    setFUrlError("");
+    const trimmedUrl = fUrl.trim();
+    if (!trimmedUrl) {
+      setFUrlError("URL is required.");
+      return;
+    }
+
+    let urlToSave = trimmedUrl;
+    if (!/^https?:\/\//i.test(urlToSave)) {
+      urlToSave = "https://" + urlToSave;
+    }
+
+    try {
+      new URL(urlToSave);
+    } catch (e) {
+      setFUrlError("Please enter a valid URL (e.g., https://kaggle.com/c/...).");
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const payload = {
-      user_id: user.id, entry_type: fType, title: fTitle, url: fUrl || null, status: fStatus,
+      user_id: user.id, entry_type: fType, title: fTitle, url: urlToSave, status: fStatus,
       medal: fMedal === "none" ? null : fMedal, team_size: parseInt(fTeam) || 1,
       description: fDesc || null, started_at: fStart || null, ended_at: fEnd || null,
     };
@@ -154,15 +177,33 @@ export default function KaggleTrackerPage() {
             <motion.div key={entry.id} layout>
               <Card className="border-white/10 bg-white/5 hover:bg-white/8 transition-all cursor-pointer group" onClick={() => openModal(entry)}>
                 <CardContent className="pt-5">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${typeInfo?.color}20` }}><Icon className="h-4 w-4" style={{ color: typeInfo?.color }} /></div>
-                      <div>
-                        <p className="text-sm font-semibold text-white">{entry.title}</p>
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${typeInfo?.color}20` }}><Icon className="h-4 w-4" style={{ color: typeInfo?.color }} /></div>
+                      <div className="min-w-0">
+                        {entry.url ? (
+                          <a
+                            href={entry.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-sm font-semibold text-white hover:text-cyan-400 cursor-pointer flex items-center gap-1.5 transition select-none min-w-0"
+                          >
+                            <span className="truncate">{entry.title}</span>
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-cyan-400 opacity-70 group-hover:opacity-100 transition-opacity" />
+                          </a>
+                        ) : (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-sm font-semibold text-slate-400 truncate">{entry.title}</span>
+                            <Badge variant="outline" className="text-[8px] bg-slate-900/50 text-slate-500 border-white/5 font-normal py-0 px-1 shrink-0">
+                              No URL
+                            </Badge>
+                          </div>
+                        )}
                         <p className="text-[10px] text-slate-500">{typeInfo?.label}</p>
                       </div>
                     </div>
-                    {entry.medal && <Badge className="text-[9px]" style={{ backgroundColor: MEDALS.find(m => m.id === entry.medal)?.color + "30", color: MEDALS.find(m => m.id === entry.medal)?.color, borderColor: MEDALS.find(m => m.id === entry.medal)?.color }}>{entry.medal}</Badge>}
+                    {entry.medal && <Badge className="text-[9px] shrink-0" style={{ backgroundColor: MEDALS.find(m => m.id === entry.medal)?.color + "30", color: MEDALS.find(m => m.id === entry.medal)?.color, borderColor: MEDALS.find(m => m.id === entry.medal)?.color }}>{entry.medal}</Badge>}
                   </div>
                   {entry.description && <p className="text-xs text-slate-400 mt-3 line-clamp-2">{entry.description}</p>}
                   <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
@@ -205,7 +246,19 @@ export default function KaggleTrackerPage() {
               <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">Medal</label><Select value={fMedal} onValueChange={setFMedal}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{MEDALS.map(m => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">Team Size</label><Input type="number" min="1" value={fTeam} onChange={e => setFTeam(e.target.value)} /></div>
             </div>
-            <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">URL</label><Input placeholder="https://kaggle.com/..." value={fUrl} onChange={e => setFUrl(e.target.value)} /></div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400 font-semibold">URL *</label>
+              <Input
+                placeholder="https://kaggle.com/..."
+                value={fUrl}
+                onChange={e => {
+                  setFUrl(e.target.value);
+                  if (fUrlError) setFUrlError("");
+                }}
+                className={fUrlError ? "border-rose-500 focus-visible:ring-rose-500" : ""}
+              />
+              {fUrlError && <p className="text-[11px] text-rose-400 font-medium">{fUrlError}</p>}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">Start Date</label><Input type="date" value={fStart} onChange={e => setFStart(e.target.value)} /></div>
               <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">End Date</label><Input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)} /></div>

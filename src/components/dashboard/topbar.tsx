@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Bell, LogOut, Moon, Search, Settings, Sun, User, Menu,
-  Trash2, Check, Trophy, Calendar, Flame, CheckSquare, Info, Sparkles
+  Trash2, Check, Trophy, Calendar, Flame, CheckSquare, Info, Sparkles, HelpCircle
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarContent } from "@/components/dashboard/sidebar";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface TopbarProps {
   user: { email?: string; full_name?: string; avatar_url?: string } | null;
@@ -105,6 +106,24 @@ export function Topbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Workspace Help Tooltip */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.dispatchEvent(new CustomEvent("toggle-help"))}
+              className="text-slate-400 hover:text-white"
+              aria-label="Workspace Guide"
+            >
+              <HelpCircle className="h-4.5 w-4.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center">
+            <p className="text-xs">Workspace Guide (?)</p>
+          </TooltipContent>
+        </Tooltip>
+
         {/* Theme toggle */}
         <Button variant="ghost" size="sm" onClick={onThemeToggle} className="text-slate-400 hover:text-white">
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}

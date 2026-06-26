@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, memo } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
   Briefcase, Plus, Trash2, Edit2, Eye, Download, GripVertical,
@@ -58,9 +58,13 @@ const SECTION_TYPES = [
 ];
 
 /* ─── Section Editor ─── */
-function SectionEditor({ section, onUpdate, onDelete }: { section: ResumeSection; onUpdate: (s: ResumeSection) => void; onDelete: () => void }) {
+const SectionEditor = memo(function SectionEditor({ section, onUpdate, onDelete }: { section: ResumeSection; onUpdate: (s: ResumeSection) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   const [localData, setLocalData] = useState(section.data);
+
+  useEffect(() => {
+    setLocalData(section.data);
+  }, [section.data]);
 
   const handleSave = () => {
     onUpdate({ ...section, data: localData });
@@ -218,10 +222,10 @@ function SectionEditor({ section, onUpdate, onDelete }: { section: ResumeSection
       </AnimatePresence>
     </div>
   );
-}
+});
 
 /* ─── Resume Preview ─── */
-function ResumePreview({ resume, sections }: { resume: Resume; sections: ResumeSection[] }) {
+const ResumePreview = memo(function ResumePreview({ resume, sections }: { resume: Resume; sections: ResumeSection[] }) {
   const sorted = [...sections].sort((a, b) => a.sort_order - b.sort_order);
   const template = resume.template || "modern";
 
@@ -320,7 +324,7 @@ function ResumePreview({ resume, sections }: { resume: Resume; sections: ResumeS
       </div>
     </div>
   );
-}
+});
 
 /* ─── Main Page ─── */
 export default function ResumePage() {
@@ -335,6 +339,91 @@ export default function ResumePage() {
 
   const supabase = createClient();
   const printRef = useRef<HTMLDivElement>(null);
+
+  const pendingUpdatesRef = useRef<Partial<Resume>>({});
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const activeResumeIdRef = useRef<string | null>(null);
+  const activeResumeRef = useRef<Resume | null>(null);
+
+  // Sync ref values with activeResume state
+  useEffect(() => {
+    activeResumeRef.current = activeResume;
+    if (activeResume) {
+      activeResumeIdRef.current = activeResume.id;
+    } else {
+      activeResumeIdRef.current = null;
+    }
+  }, [activeResume]);
+
+  const loadSections = useCallback(async (resumeId: string) => {
+    const { data } = await supabase.from("resume_sections").select("*").eq("resume_id", resumeId).order("sort_order");
+    setSections(data || []);
+  }, [supabase]);
+
+  const saveResumeToDb = useCallback(async (resumeId: string, updates: Partial<Resume>) => {
+    if (Object.keys(updates).length === 0) return;
+    try {
+      await supabase.from("resumes").update(updates).eq("id", resumeId);
+    } catch (err) {
+      console.error("Failed to save resume: ", err);
+    }
+  }, [supabase]);
+
+  const flushPendingUpdates = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    if (activeResumeIdRef.current && Object.keys(pendingUpdatesRef.current).length > 0) {
+      const updates = { ...pendingUpdatesRef.current };
+      pendingUpdatesRef.current = {};
+      await saveResumeToDb(activeResumeIdRef.current, updates);
+    }
+  }, [saveResumeToDb]);
+
+  // Flush any pending updates when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (activeResumeIdRef.current && Object.keys(pendingUpdatesRef.current).length > 0) {
+        const updates = { ...pendingUpdatesRef.current };
+        supabase.from("resumes").update(updates).eq("id", activeResumeIdRef.current);
+      }
+    };
+  }, [supabase]);
+
+  const handleUpdateResume = useCallback((updates: Partial<Resume>) => {
+    const currentResume = activeResumeRef.current;
+    if (!currentResume) return;
+
+    // 1. Sync React state instantly
+    const updated = { ...currentResume, ...updates };
+    setActiveResume(updated);
+    setResumes(prev => prev.map(r => r.id === currentResume.id ? updated : r));
+
+    // 2. Accumulate updates in ref
+    pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+
+    // 3. Debounce the DB call
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    const currentId = currentResume.id;
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (Object.keys(pendingUpdatesRef.current).length > 0) {
+        const updatesToSave = { ...pendingUpdatesRef.current };
+        pendingUpdatesRef.current = {};
+        await saveResumeToDb(currentId, updatesToSave);
+      }
+    }, 1000);
+  }, [saveResumeToDb]);
+
+  const handleSwitchResume = useCallback(async (r: Resume) => {
+    if (activeResumeIdRef.current === r.id) return;
+    await flushPendingUpdates();
+    setActiveResume(r);
+    await loadSections(r.id);
+  }, [flushPendingUpdates, loadSections]);
 
   useEffect(() => {
     loadResumes();
@@ -351,11 +440,6 @@ export default function ResumePage() {
       await loadSections(data[0].id);
     }
     setLoading(false);
-  }
-
-  async function loadSections(resumeId: string) {
-    const { data } = await supabase.from("resume_sections").select("*").eq("resume_id", resumeId).order("sort_order");
-    setSections(data || []);
   }
 
   async function handleCreateResume() {
@@ -379,6 +463,13 @@ export default function ResumePage() {
 
   async function handleDeleteResume(id: string) {
     if (!confirm("Delete this resume?")) return;
+    if (activeResumeIdRef.current === id) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      pendingUpdatesRef.current = {};
+    }
     await supabase.from("resumes").delete().eq("id", id);
     setResumes(prev => prev.filter(r => r.id !== id));
     if (activeResume?.id === id) {
@@ -387,14 +478,6 @@ export default function ResumePage() {
       if (remaining[0]) loadSections(remaining[0].id);
       else setSections([]);
     }
-  }
-
-  async function handleUpdateResume(updates: Partial<Resume>) {
-    if (!activeResume) return;
-    await supabase.from("resumes").update(updates).eq("id", activeResume.id);
-    const updated = { ...activeResume, ...updates };
-    setActiveResume(updated);
-    setResumes(prev => prev.map(r => r.id === activeResume.id ? updated : r));
   }
 
   async function handleAddSection(type: string) {
@@ -418,17 +501,17 @@ export default function ResumePage() {
     }
   }
 
-  async function handleUpdateSection(updated: ResumeSection) {
+  const handleUpdateSection = useCallback(async (updated: ResumeSection) => {
     await supabase.from("resume_sections").update({ data: updated.data }).eq("id", updated.id);
     setSections(prev => prev.map(s => s.id === updated.id ? updated : s));
-  }
+  }, [supabase]);
 
-  async function handleDeleteSection(id: string) {
+  const handleDeleteSection = useCallback(async (id: string) => {
     await supabase.from("resume_sections").delete().eq("id", id);
     setSections(prev => prev.filter(s => s.id !== id));
-  }
+  }, [supabase]);
 
-  async function handleReorder(newSections: ResumeSection[]) {
+  const handleReorder = useCallback(async (newSections: ResumeSection[]) => {
     setSections(newSections);
     try {
       const promises = newSections.map((section, idx) => 
@@ -441,7 +524,7 @@ export default function ResumePage() {
     } catch (err) {
       console.error("Failed to update section orders: ", err);
     }
-  }
+  }, [supabase]);
 
   function handlePrint() {
     const content = document.getElementById("resume-preview");
@@ -488,7 +571,7 @@ export default function ResumePage() {
         <div className="flex flex-wrap gap-3">
           {resumes.map(r => (
             <motion.button key={r.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => { setActiveResume(r); loadSections(r.id); }}
+              onClick={() => handleSwitchResume(r)}
               className={`relative rounded-2xl border px-4 py-3 text-left transition-all ${activeResume?.id === r.id ? "border-cyan-400/50 bg-cyan-500/10 text-white shadow-glow" : "border-white/10 bg-white/5 text-slate-400 hover:border-white/20"}`}
             >
               <span className="text-sm font-semibold block">{r.title}</span>

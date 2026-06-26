@@ -201,14 +201,42 @@ export default function DashboardHomePage() {
   // Calculate Productivity Score (tasks done, habits checked, study target)
   const completedTasksCount = tasks.filter((t) => t.status === "done").length;
   const totalTasksCount = tasks.length;
-  const taskProgressRatio = totalTasksCount > 0 ? completedTasksCount / totalTasksCount : 0.6; // default fallback if empty
 
   const totalHabitsCount = habits.length;
   const completedHabitsCount = habits.filter((h) => h.streak > 0).length;
-  const habitProgressRatio = totalHabitsCount > 0 ? completedHabitsCount / totalHabitsCount : 0.7;
+
+  const hasActivity =
+    totalTasksCount > 0 ||
+    totalHabitsCount > 0 ||
+    allNotes.length > 0 ||
+    focusSessions.length > 0 ||
+    exams.length > 0 ||
+    studyPlans.length > 0;
+
+  let rawScore = 0;
+
+  if (hasActivity) {
+    if (totalTasksCount > 0 && totalHabitsCount > 0) {
+      const taskProgressRatio = completedTasksCount / totalTasksCount;
+      const habitProgressRatio = completedHabitsCount / totalHabitsCount;
+      rawScore = Math.round((taskProgressRatio * 40) + (habitProgressRatio * 30) + 30);
+    } else if (totalTasksCount > 0) {
+      const taskProgressRatio = completedTasksCount / totalTasksCount;
+      rawScore = Math.round((taskProgressRatio * 70) + 30);
+    } else if (totalHabitsCount > 0) {
+      const habitProgressRatio = completedHabitsCount / totalHabitsCount;
+      rawScore = Math.round((habitProgressRatio * 70) + 30);
+    } else {
+      // If they have other activities (notes, focus sessions, etc.) but no tasks/habits,
+      // calculate a score based on those:
+      // Focus sessions contribute up to 50, notes contribute up to 50
+      const focusContribution = Math.min(focusSessions.length * 20, 50);
+      const notesContribution = Math.min(allNotes.length * 10, 50);
+      rawScore = focusContribution + notesContribution;
+    }
+  }
 
   // Aggregate Productivity Score
-  const rawScore = Math.round((taskProgressRatio * 40) + (habitProgressRatio * 30) + 30);
   const productivityScoreData = useMemo(() => [{ name: "Productivity", value: rawScore, fill: "url(#cyan-fuchsia-gradient)" }], [rawScore]);
 
   // Date helpers for charts
@@ -231,8 +259,15 @@ export default function DashboardHomePage() {
     return last7Days.map((date) => {
       const dateStr = date.toDateString();
       const mins = focusSessions
-        .filter((s) => s.started_at && new Date(s.started_at).toDateString() === dateStr)
-        .reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+        .filter((s) => s.started_at && new Date(s.started_at).toDateString() === dateStr && s.session_type !== "break")
+        .reduce((sum, s) => {
+          let sessionMins = s.duration_minutes || 0;
+          if (!s.ended_at && s.started_at) {
+            const elapsed = Math.floor((new Date().getTime() - new Date(s.started_at).getTime()) / 60000);
+            sessionMins = Math.max(0, elapsed);
+          }
+          return sum + sessionMins;
+        }, 0);
       return {
         date: date.toLocaleDateString(undefined, { weekday: "short" }),
         hours: Math.round((mins / 60) * 10) / 10,
@@ -277,9 +312,11 @@ export default function DashboardHomePage() {
   }, [tasks]);
 
   const upcomingExamsCount = useMemo(() => {
-    return exams.filter(
-      (e) => e.status === "upcoming" || new Date(e.exam_date) >= new Date()
-    ).length;
+    return exams.filter((e) => e.status === "upcoming").length;
+  }, [exams]);
+
+  const upcomingExams = useMemo(() => {
+    return exams.filter((e) => e.status === "upcoming");
   }, [exams]);
 
   const notesCreatedThisWeek = useMemo(() => {
@@ -290,7 +327,7 @@ export default function DashboardHomePage() {
   // Daily targets mapping
   const dailyTargets = useMemo(() => {
     const todayStr = new Date().toDateString();
-    
+
     // 1. Tasks due today
     const todayTasks = tasks
       .filter((t) => t.due_at && new Date(t.due_at).toDateString() === todayStr)
@@ -516,8 +553,10 @@ export default function DashboardHomePage() {
               </RadialBarChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-bold text-white">{rawScore}%</span>
-              <span className="text-[10px] text-cyan-300 uppercase tracking-widest mt-0.5">Optimal</span>
+              <span className="text-3xl font-bold text-white">{hasActivity ? `${rawScore}%` : "0%"}</span>
+              <span className="text-[10px] text-cyan-300 uppercase tracking-widest mt-0.5">
+                {hasActivity ? (rawScore >= 80 ? "Optimal" : rawScore >= 50 ? "Moderate" : "Needs Work") : "No data yet"}
+              </span>
             </div>
           </div>
           <p className="text-xs text-slate-400 mt-2">
@@ -578,13 +617,13 @@ export default function DashboardHomePage() {
             <Calendar className="h-5 w-5 text-fuchsia-400" />
           </CardHeader>
           <CardContent className="space-y-3">
-            {exams.length === 0 ? (
+            {upcomingExams.length === 0 ? (
               <div className="py-6 text-center text-sm text-slate-500">
                 <BookOpen className="mx-auto h-8 w-8 text-fuchsia-500/40 mb-2" />
-                No exams scheduled yet.
+                No upcoming exams scheduled.
               </div>
             ) : (
-              exams.slice(0, 3).map((exam) => (
+              upcomingExams.slice(0, 3).map((exam) => (
                 <div
                   key={exam.id}
                   className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-950/40 px-3.5 py-3"

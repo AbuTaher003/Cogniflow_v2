@@ -50,6 +50,7 @@ export default function CPTrackerPage() {
   const [pUrl, setPUrl] = useState(""); const [pDifficulty, setPDifficulty] = useState("medium");
   const [pStatus, setPStatus] = useState("solved"); const [pTopic, setPTopic] = useState("");
   const [pTime, setPTime] = useState(""); const [pNotes, setPNotes] = useState("");
+  const [pUrlError, setPUrlError] = useState("");
 
   // Contest Modal
   const [cModalOpen, setCModalOpen] = useState(false);
@@ -78,14 +79,36 @@ export default function CPTrackerPage() {
   function openPModal(p?: Problem) {
     if (p) { setEditingP(p); setPName(p.problem_name); setPPlatform(p.platform); setPUrl(p.problem_url || ""); setPDifficulty(p.difficulty); setPStatus(p.status); setPTopic(p.topic || ""); setPTime(p.time_taken_minutes?.toString() || ""); setPNotes(p.notes || ""); }
     else { setEditingP(null); setPName(""); setPPlatform("leetcode"); setPUrl(""); setPDifficulty("medium"); setPStatus("solved"); setPTopic(""); setPTime(""); setPNotes(""); }
+    setPUrlError("");
     setPModalOpen(true);
   }
 
   async function handleSaveP() {
     if (!pName.trim()) return;
+
+    // Validate URL format and presence
+    setPUrlError("");
+    const trimmedUrl = pUrl.trim();
+    if (!trimmedUrl) {
+      setPUrlError("URL is required.");
+      return;
+    }
+
+    let urlToSave = trimmedUrl;
+    if (!/^https?:\/\//i.test(urlToSave)) {
+      urlToSave = "https://" + urlToSave;
+    }
+
+    try {
+      new URL(urlToSave);
+    } catch (e) {
+      setPUrlError("Please enter a valid URL (e.g., https://leetcode.com/problems/two-sum).");
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const payload = { user_id: user.id, platform: pPlatform, problem_name: pName, problem_url: pUrl || null, difficulty: pDifficulty, status: pStatus, topic: pTopic || null, time_taken_minutes: pTime ? parseInt(pTime) : null, notes: pNotes || null };
+    const payload = { user_id: user.id, platform: pPlatform, problem_name: pName, problem_url: urlToSave, difficulty: pDifficulty, status: pStatus, topic: pTopic || null, time_taken_minutes: pTime ? parseInt(pTime) : null, notes: pNotes || null };
     if (editingP) {
       await supabase.from("cp_problems").update(payload).eq("id", editingP.id);
       setProblems(prev => prev.map(p => p.id === editingP.id ? { ...p, ...payload } as Problem : p));
@@ -207,7 +230,24 @@ export default function CPTrackerPage() {
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold" style={{ backgroundColor: `${plat?.color}20`, color: plat?.color }}>{plat?.label?.slice(0, 2)}</div>
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold text-white truncate">{p.problem_name}</p>
+                            {p.problem_url ? (
+                              <a
+                                href={p.problem_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-semibold text-white hover:text-cyan-400 cursor-pointer flex items-center gap-1.5 transition select-none"
+                              >
+                                <span className="truncate">{p.problem_name}</span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-cyan-400 opacity-70 group-hover:opacity-100 transition-opacity" />
+                              </a>
+                            ) : (
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-xs font-semibold text-slate-400 truncate">{p.problem_name}</span>
+                                <Badge variant="outline" className="text-[8px] bg-slate-900/50 text-slate-500 border-white/5 font-normal py-0 px-1">
+                                  No URL
+                                </Badge>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 mt-0.5">
                               <Badge variant="outline" className="text-[9px]" style={{ borderColor: diff?.color, color: diff?.color }}>{diff?.label}</Badge>
                               {p.topic && <span className="text-[9px] text-slate-500">{p.topic}</span>}
@@ -319,7 +359,19 @@ export default function CPTrackerPage() {
               <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">Time (min)</label><Input type="number" placeholder="30" value={pTime} onChange={e => setPTime(e.target.value)} /></div>
             </div>
             <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">Topic</label><Input placeholder="DP, Graphs, etc." value={pTopic} onChange={e => setPTopic(e.target.value)} /></div>
-            <div className="space-y-1"><label className="text-xs text-slate-400 font-semibold">URL</label><Input placeholder="https://leetcode.com/..." value={pUrl} onChange={e => setPUrl(e.target.value)} /></div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400 font-semibold">URL *</label>
+              <Input
+                placeholder="https://leetcode.com/..."
+                value={pUrl}
+                onChange={e => {
+                  setPUrl(e.target.value);
+                  if (pUrlError) setPUrlError("");
+                }}
+                className={pUrlError ? "border-rose-500 focus-visible:ring-rose-500" : ""}
+              />
+              {pUrlError && <p className="text-[11px] text-rose-400 font-medium">{pUrlError}</p>}
+            </div>
           </div>
           <DialogFooter><Button variant="ghost" onClick={() => setPModalOpen(false)}>Cancel</Button><Button variant="primary" onClick={handleSaveP}>Save</Button></DialogFooter>
         </DialogContent>
