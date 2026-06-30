@@ -178,7 +178,7 @@ export function SidebarContent() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1 p-4">
+    <nav className="flex flex-col flex-1 overflow-y-auto gap-1 p-4">
       <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Main</p>
       {mainNav.map((item) => (
         <NavItem key={item.href} item={item} collapsed={false} isActive={pathname === item.href} isMobile={true} />
