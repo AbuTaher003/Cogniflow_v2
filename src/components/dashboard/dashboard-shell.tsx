@@ -41,13 +41,24 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
 
   useEffect(() => {
     async function loadNotifications() {
-      const { data } = await supabase
+      // 1. Fetch user notifications (which includes auto-distributed announcements)
+      const { data: notices } = await supabase
         .from("notifications")
         .select("*")
         .order("created_at", { ascending: false });
-      if (data) {
-        setNotifications(data);
-      }
+
+      // 2. Map announcements and standard notifications
+      const mapped = (notices || []).map((n: any) => {
+        const isAnnouncement = n.type === "system" && n.data?.announcement_id;
+        return {
+          ...n,
+          is_announcement: !!isAnnouncement,
+          priority: n.data?.priority || "Medium",
+          announcement_type: n.data?.type || "General"
+        };
+      });
+
+      setNotifications(mapped);
     }
     loadNotifications();
 
@@ -63,22 +74,24 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
       )
       .subscribe();
 
+    // Listen to custom notification refresh events
+    window.addEventListener("realtime-notifications", loadNotifications);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener("realtime-notifications", loadNotifications);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleMarkAsRead(id: string) {
     await supabase.from("notifications").update({ read: true }).eq("id", id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    window.dispatchEvent(new Event("realtime-notifications"));
   }
 
   async function handleDeleteNotification(id: string) {
     await supabase.from("notifications").delete().eq("id", id);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    window.dispatchEvent(new Event("realtime-notifications"));
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;

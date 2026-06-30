@@ -7,6 +7,7 @@ import {
   TrendingUp, Clock, Zap, Filter, ExternalLink, Calendar
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { FeatureGuard } from "@/components/billing/FeatureGuard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -172,7 +173,8 @@ export default function CPTrackerPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <FeatureGuard feature="cp-tracker">
+      <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-white">Competitive Programming</h1>
@@ -397,6 +399,7 @@ export default function CPTrackerPage() {
           <DialogFooter><Button variant="ghost" onClick={() => setCModalOpen(false)}>Cancel</Button><Button variant="primary" onClick={handleSaveC}>Save</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </FeatureGuard>
   );
 }

@@ -1,8 +1,10 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import { createClient } from "@/lib/supabase/client";
 import {
   BarChart3, BookOpen, Brain, CalendarRange, CheckCircle2, Code2, FileText,
   Flame, Home, LineChart, Settings, Sparkles, Target, Timer, Trophy, Briefcase,
@@ -35,10 +37,10 @@ const toolsNav = [
 ];
 
 const saasNav = [
-  { label: "Subscription", href: "/dashboard/subscription", icon: CreditCard },
+  { label: "Billing & Plans", href: "/dashboard/billing", icon: CreditCard },
   { label: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
   { label: "Feedback", href: "/dashboard/feedback", icon: MessageSquareText },
-  { label: "Admin Panel", href: "/dashboard/admin", icon: ShieldAlert },
+  { label: "Admin Panel", href: "/admin", icon: ShieldAlert },
 ];
 
 const bottomNav = [
@@ -89,6 +91,16 @@ function NavItem({ item, collapsed, isActive, isMobile = false }: { item: typeof
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserEmail(user.email || null);
+      }
+    });
+  }, []);
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -131,9 +143,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <p className={cn("mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500", collapsed && "sr-only")}>
             SaaS Platform
           </p>
-          {saasNav.map((item) => (
-            <NavItem key={item.href} item={item} collapsed={collapsed} isActive={pathname === item.href} />
-          ))}
+          {saasNav.map((item) => {
+            if (item.label === "Admin Panel" && userEmail !== "ataherrizon@gmail.com") {
+              return null;
+            }
+            return (
+              <NavItem key={item.href} item={item} collapsed={collapsed} isActive={pathname === item.href} />
+            );
+          })}
         </nav>
 
         {/* Bottom */}

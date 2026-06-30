@@ -24,7 +24,7 @@ export default function NotificationsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. Fetch current notifications
+    // 1. Fetch current notifications (including auto-distributed system announcements)
     const { data: notices } = await supabase
       .from("notifications")
       .select("*")
@@ -76,6 +76,7 @@ export default function NotificationsPage() {
     }
 
     // 4. Insert new notifications if any
+    let finalNotices = currentNotices;
     if (newNotificationsToInsert.length > 0) {
       const { error } = await supabase.from("notifications").insert(newNotificationsToInsert);
       if (!error) {
@@ -85,20 +86,44 @@ export default function NotificationsPage() {
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
-        setNotifications(updatedNotices || []);
-      } else {
-        setNotifications(currentNotices);
+        finalNotices = updatedNotices || [];
       }
-    } else {
-      setNotifications(currentNotices);
     }
 
+    // 5. Map announcements and standard notifications
+    const mapped = (finalNotices || []).map((n: any) => {
+      const isAnnouncement = n.type === "system" && n.data?.announcement_id;
+      return {
+        ...n,
+        is_announcement: !!isAnnouncement,
+        priority: n.data?.priority || "Medium",
+        announcement_type: n.data?.type || "General"
+      };
+    });
+
+    // 6. Sort: unread Critical announcements first, then chronological
+    const sorted = mapped.sort((a, b) => {
+      const aCritical = a.is_announcement && !a.read && a.priority === "Critical";
+      const bCritical = b.is_announcement && !b.read && b.priority === "Critical";
+      if (aCritical && !bCritical) return -1;
+      if (!aCritical && bCritical) return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+    setNotifications(sorted);
     setLoading(false);
     setRefreshing(false);
   };
 
   useEffect(() => {
     loadNotificationsData();
+    const handleSync = () => {
+      loadNotificationsData();
+    };
+    window.addEventListener("realtime-notifications", handleSync);
+    return () => {
+      window.removeEventListener("realtime-notifications", handleSync);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -112,7 +137,6 @@ export default function NotificationsPage() {
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, read: readState } : n))
       );
-      // Dispatch custom event to trigger Topbar refresh
       window.dispatchEvent(new Event("realtime-notifications"));
     }
   };
@@ -121,26 +145,46 @@ export default function NotificationsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-    if (unreadIds.length === 0) return;
+    const unreadNoticeIds = notifications.filter((n) => !n.read && !n.is_announcement).map((n) => n.id);
+    const unreadAnnIds = notifications.filter((n) => !n.read && n.is_announcement).map((n) => n.id);
 
-    const { error } = await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("user_id", user.id)
-      .eq("read", false);
-
-    if (!error) {
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-      window.dispatchEvent(new Event("realtime-notifications"));
+    if (unreadNoticeIds.length > 0) {
+      await supabase
+        .from("notifications")
+        .update({ read: true })
+        .eq("user_id", user.id)
+        .eq("read", false);
     }
+
+    if (unreadAnnIds.length > 0) {
+      const insertRows = unreadAnnIds.map((annId) => ({
+        user_id: user.id,
+        announcement_id: annId
+      }));
+      await supabase.from("user_announcements_read").insert(insertRows);
+    }
+
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    window.dispatchEvent(new Event("realtime-notifications"));
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("notifications").delete().eq("id", id);
-    if (!error) {
+    const ticket = notifications.find((n) => n.id === id);
+    if (ticket?.is_announcement) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from("user_announcements_read")
+          .insert({ user_id: user.id, announcement_id: id });
+      }
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       window.dispatchEvent(new Event("realtime-notifications"));
+    } else {
+      const { error } = await supabase.from("notifications").delete().eq("id", id);
+      if (!error) {
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+        window.dispatchEvent(new Event("realtime-notifications"));
+      }
     }
   };
 
@@ -154,6 +198,8 @@ export default function NotificationsPage() {
         return <Flame className="h-5 w-5 text-orange-400" />;
       case "achievement":
         return <Trophy className="h-5 w-5 text-yellow-400" />;
+      case "emergency":
+        return <AlertCircle className="h-5 w-5 text-rose-500 animate-pulse" />;
       default:
         return <Info className="h-5 w-5 text-blue-400" />;
     }
@@ -163,7 +209,7 @@ export default function NotificationsPage() {
     if (activeTab === "all") return true;
     if (activeTab === "exam") return n.type === "exam_reminder";
     if (activeTab === "reminder") return n.type === "task_reminder" || n.type === "habit_reminder";
-    if (activeTab === "system") return n.type === "system" || n.type === "info" || n.type === "achievement";
+    if (activeTab === "system") return n.type === "system" || n.type === "emergency" || n.type === "info" || n.type === "achievement";
     return true;
   });
 

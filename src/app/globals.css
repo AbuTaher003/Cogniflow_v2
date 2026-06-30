@@ -263,3 +263,62 @@
   border-color: hsl(var(--border)) !important;
   color: hsl(var(--foreground)) !important;
 }
+
+/* ==========================================
+   Zinc Theme Overrides for Admin Panel
+   ========================================== */
+.light .bg-zinc-950,
+.light .bg-zinc-950\/80,
+.light .bg-zinc-950\/50,
+.light .bg-zinc-950\/40,
+.light .bg-zinc-900,
+.light .bg-zinc-900\/50,
+.light .bg-zinc-900\/60 {
+  background-color: hsl(var(--card)) !important;
+}
+
+.light .bg-zinc-950\/80 {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.light .bg-zinc-950\/40 {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+.light .bg-zinc-950\/50 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.light .bg-zinc-900\/50 {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+.light .border-zinc-900,
+.light .border-zinc-800,
+.light .border-zinc-700 {
+  border-color: hsl(var(--border)) !important;
+}
+
+.light .text-zinc-100,
+.light .text-zinc-200,
+.light .text-zinc-300 {
+  color: hsl(var(--foreground)) !important;
+}
+
+.light .text-zinc-400,
+.light .text-zinc-500 {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.light .hover\:bg-zinc-900\/60:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+.light .hover\:bg-zinc-900:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.light .hover\:border-zinc-800:hover,
+.light .hover\:border-zinc-700:hover {
+  border-color: hsl(var(--border)) !important;
+}

@@ -7,6 +7,7 @@ import {
   Calendar, Award, Activity, ShieldCheck, Flame, PieChart as PieChartIcon
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { FeatureGuard } from "@/components/billing/FeatureGuard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -192,7 +193,8 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <FeatureGuard feature="advanced-analytics">
+      <div className="space-y-6">
       {/* Header controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -434,6 +436,7 @@ export default function AnalyticsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </FeatureGuard>
   );
 }

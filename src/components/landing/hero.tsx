@@ -12,12 +12,12 @@ export function Hero() {
     <section className="relative overflow-hidden px-4 pb-28 pt-20 sm:px-6 lg:px-8 lg:pb-36 lg:pt-32 isolate">
       {/* Premium gradient mesh background */}
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_30%_20%,_rgba(34,211,238,0.18),_transparent_40%),radial-gradient(circle_at_70%_60%,_rgba(217,70,239,0.15),_transparent_40%),linear-gradient(180deg,_rgba(6,11,29,1),_rgba(2,4,12,1))]" />
-      
+
       {/* Decorative sweep light lines */}
       <div className="absolute inset-x-0 top-0 -z-10 h-[36rem] bg-[linear-gradient(90deg,rgba(34,211,238,0.15),rgba(168,85,247,0.1),rgba(59,130,246,0.15))] bg-[length:200%_200%] opacity-40 blur-3xl animate-sweep" />
 
       <div className="mx-auto max-w-7xl relative">
-        
+
         {/* Subtle Watermark Logo / Brand Badge above headline */}
         <div className="flex justify-center mb-8">
           <motion.div
@@ -80,9 +80,9 @@ export function Hero() {
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0, y: [0, -10, 0] }}
-            transition={{ 
-              x: { duration: 0.8, delay: 0.4 }, 
-              y: { duration: 6, repeat: Infinity, ease: "easeInOut" } 
+            transition={{
+              x: { duration: 0.8, delay: 0.4 },
+              y: { duration: 6, repeat: Infinity, ease: "easeInOut" }
             }}
             className="hidden lg:flex absolute -left-16 top-1/4 z-20 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-xl backdrop-blur-xl"
           >
@@ -99,9 +99,9 @@ export function Hero() {
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0, y: [0, 10, 0] }}
-            transition={{ 
-              x: { duration: 0.8, delay: 0.5 }, 
-              y: { duration: 7, repeat: Infinity, ease: "easeInOut" } 
+            transition={{
+              x: { duration: 0.8, delay: 0.5 },
+              y: { duration: 7, repeat: Infinity, ease: "easeInOut" }
             }}
             className="hidden lg:flex absolute -right-16 top-1/3 z-20 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-xl backdrop-blur-xl"
           >
@@ -117,9 +117,9 @@ export function Hero() {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: [0, -8, 0] }}
-            transition={{ 
+            transition={{
               opacity: { duration: 0.8, delay: 0.6 },
-              y: { duration: 5, repeat: Infinity, ease: "easeInOut" } 
+              y: { duration: 5, repeat: Infinity, ease: "easeInOut" }
             }}
             className="hidden lg:flex absolute -right-10 bottom-12 z-20 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-xl backdrop-blur-xl"
           >

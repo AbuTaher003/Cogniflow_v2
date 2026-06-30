@@ -6,8 +6,9 @@ import { motion } from "framer-motion";
 import {
   CheckCircle2, Clock3, Flame, BookOpen, Target, LineChart,
   Sparkles, Calendar, FileText, Plus, Award, BarChart3, TrendingUp,
-  Activity
+  Activity, AlertTriangle, Megaphone
 } from "lucide-react";
+import { getPlan } from "@/lib/billing-client";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,6 +42,8 @@ export default function DashboardHomePage() {
   const [habitLogs, setHabitLogs] = useState<any[]>([]);
   const [recentHabitLogs, setRecentHabitLogs] = useState<any[]>([]);
   const [quote, setQuote] = useState("");
+  const [planDetails, setPlanDetails] = useState<any>(null);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
 
   const supabase = createClient();
   const router = useRouter();
@@ -56,6 +59,13 @@ export default function DashboardHomePage() {
       .eq("id", user.id)
       .single();
     setProfile(profileData);
+
+    try {
+      const plan = await getPlan(user.id, supabase);
+      setPlanDetails(plan);
+    } catch (e) {
+      console.error("Failed to load plan details:", e);
+    }
 
     // Fetch Tasks
     const { data: tasksData } = await supabase
@@ -142,6 +152,30 @@ export default function DashboardHomePage() {
       .order("completed_at", { ascending: false })
       .limit(5);
     setRecentHabitLogs(recentHabitLogsData || []);
+
+    // Fetch active unread global announcements (from distributed system notifications)
+    try {
+      const { data: notices } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("type", "system")
+        .eq("read", false)
+        .order("created_at", { ascending: false });
+
+      const unreadAnns = (notices || []).map((n: any) => ({
+        id: n.id,
+        announcement_id: n.data?.announcement_id,
+        title: n.title,
+        content: n.message,
+        type: n.data?.type || "General",
+        priority: n.data?.priority || "Medium",
+        created_at: n.created_at
+      }));
+      setAnnouncements(unreadAnns);
+    } catch (annError) {
+      console.error("Failed to load dashboard announcements:", annError);
+    }
 
     setLoading(false);
   };
@@ -490,6 +524,81 @@ export default function DashboardHomePage() {
 
   return (
     <div className="space-y-6">
+      {/* Expiry Warning Alert Banner */}
+      {planDetails && planDetails.expiresAt && (() => {
+        const daysLeft = Math.ceil((new Date(planDetails.expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+        if (daysLeft >= 0 && daysLeft <= 3) {
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-amber-400 text-sm"
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                <span>
+                  Your <strong>{planDetails.name.toUpperCase()}</strong> plan expires in <strong>{daysLeft} days</strong> ({new Date(planDetails.expiresAt).toLocaleDateString()}). Renew to maintain priority AI and exports.
+                </span>
+              </div>
+              <Button
+                onClick={() => router.push("/dashboard/billing")}
+                size="sm"
+                className="bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold shrink-0 rounded-lg text-xs"
+              >
+                Renew Now
+              </Button>
+            </motion.div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Active Global System Announcement Alert Card */}
+      {announcements.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl p-4 border flex flex-col sm:flex-row items-start justify-between gap-4 text-xs ${
+            announcements[0].priority === "Critical"
+              ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+              : "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <Megaphone className={`w-5 h-5 shrink-0 mt-0.5 ${announcements[0].priority === "Critical" ? "animate-pulse" : ""}`} />
+            <div className="space-y-1">
+              <p className="font-bold text-sm text-white flex items-center gap-2">
+                {announcements[0].title}
+                <Badge variant="outline" className={`text-[8px] uppercase ${
+                  announcements[0].priority === "Critical"
+                    ? "bg-rose-500/20 text-rose-450 border-rose-500/30 font-black animate-pulse"
+                    : "bg-cyan-500/20 text-cyan-450 border-cyan-500/30 font-bold"
+                }`}>
+                  {announcements[0].type}
+                </Badge>
+              </p>
+              <p className="text-slate-350 leading-relaxed text-2xs pt-1 whitespace-pre-wrap">{announcements[0].content}</p>
+              <span className="text-[9px] text-slate-500 block font-mono">Posted: {new Date(announcements[0].created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          <Button
+            onClick={async () => {
+              await supabase
+                .from("notifications")
+                .update({ read: true })
+                .eq("id", announcements[0].id);
+              setAnnouncements(prev => prev.filter(a => a.id !== announcements[0].id));
+              window.dispatchEvent(new Event("realtime-notifications"));
+            }}
+            size="sm"
+            variant="ghost"
+            className="text-slate-450 hover:text-white shrink-0 h-8 self-center border border-white/5 rounded-lg hover:bg-white/5 text-2xs"
+          >
+            Mark Read & Dismiss
+          </Button>
+        </motion.div>
+      )}
+
       {/* 1. Welcome Card & Quick Info */}
       <div className="grid gap-6 md:grid-cols-3">
         <motion.div
@@ -500,13 +609,22 @@ export default function DashboardHomePage() {
           {/* Glassmorphic lighting effect */}
           <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full bg-cyan-500/10 blur-[80px]" />
           <div className="absolute -left-20 -bottom-20 h-60 w-60 rounded-full bg-fuchsia-500/10 blur-[80px]" />
-
+ 
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
-              <Badge variant="neon" className="mb-4">
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                Active Session
-              </Badge>
+              <div className="flex items-center justify-between mb-4">
+                <Badge variant="neon">
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  Active Session
+                </Badge>
+                {planDetails && planDetails.planSlug !== "free" && (
+                  <Badge className={`bg-gradient-to-r ${
+                    planDetails.planSlug === "elite" ? "from-amber-500 via-yellow-400 to-amber-600 text-zinc-950" : "from-purple-600 to-indigo-600 text-white"
+                  } border-none text-[10px] font-black tracking-wider shadow-lg px-2.5 py-0.5 rounded-full uppercase`}>
+                    {planDetails.planSlug} Member
+                  </Badge>
+                )}
+              </div>
               <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">
                 Welcome back, {profile?.full_name?.split(" ")[0] ?? "Student"}!
               </h2>
@@ -564,6 +682,37 @@ export default function DashboardHomePage() {
           </p>
         </motion.div>
       </div>
+
+      {/* Trial / Free Upgrade CTA Banner */}
+      {planDetails && planDetails.planSlug === "free" && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-zinc-950/40 border border-zinc-900 rounded-3xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-44 h-44 bg-purple-600/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex items-center gap-3 relative z-10">
+            <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-xl shrink-0">
+              <Sparkles className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                You are on the FREE Trial Plan
+              </h4>
+              <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                Unlock advanced study aids: CP tracker, Kaggle tracker, unlimited resume exports, priority AI assistant, and deeper analytics metrics.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => router.push("/dashboard/billing")}
+            size="sm"
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-xl shrink-0 px-6 h-9 relative z-10"
+          >
+            Upgrade Plan
+          </Button>
+        </motion.div>
+      )}
 
       {/* Grid for core dashboard widgets */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

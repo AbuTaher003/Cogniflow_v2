@@ -6,6 +6,8 @@ import {
   Brain, Sparkles, BookOpen, FileText, Settings2,
   CalendarDays, Zap, HelpCircle, RefreshCw, Send, CheckCircle2, XCircle
 } from "lucide-react";
+import { hasUsage } from "@/lib/billing-client";
+import { toast } from "@/lib/toast";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,13 +78,42 @@ export default function AIAssistantPage() {
     setModelName(settings.modelName || "");
   }
 
+  async function checkAndIncrementAIUsage(): Promise<boolean> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const stored = localStorage.getItem("cogniflow_ai_queries_count");
+    const count = stored ? parseInt(stored, 10) : 0;
+
+    const isAllowed = await hasUsage(user.id, "aiQueries", count);
+    if (!isAllowed) {
+      toast.error("You have reached the AI assistant query limits of your current plan. Please upgrade to unlock more queries.");
+      return false;
+    }
+
+    localStorage.setItem("cogniflow_ai_queries_count", (count + 1).toString());
+
+    // Sync usage to DB for super admin metrics tracking
+    try {
+      await supabase.from("ai_requests").insert({ user_id: user.id });
+    } catch (err) {
+      console.warn("Failed to sync AI usage to db:", err);
+    }
+
+    return true;
+  }
+
   function handleSaveSettings() {
     saveAISettings({ provider, apiKey, baseUrl, modelName });
-    alert("AI settings saved successfully!");
+    toast.success("AI settings saved successfully!");
   }
 
   async function handleGenerateStudyPlan() {
     if (!plannerSubject.trim()) return;
+
+    const allowed = await checkAndIncrementAIUsage();
+    if (!allowed) return;
+
     setLoading(true);
     setStudyPlanResult("");
     try {
@@ -108,6 +139,10 @@ export default function AIAssistantPage() {
     }
 
     if (!content.trim()) return;
+
+    const allowed = await checkAndIncrementAIUsage();
+    if (!allowed) return;
+
     setLoading(true);
     setSummaryResult("");
     try {
@@ -122,6 +157,10 @@ export default function AIAssistantPage() {
 
   async function handleGenerateQuiz() {
     if (!quizSubject.trim()) return;
+
+    const allowed = await checkAndIncrementAIUsage();
+    if (!allowed) return;
+
     setLoading(true);
     setQuizQuestions([]);
     setCurrentQuestionIdx(0);
@@ -132,7 +171,7 @@ export default function AIAssistantPage() {
       const questions = await generateQuiz(quizSubject, quizTopic, quizCount);
       setQuizQuestions(questions);
     } catch (e) {
-      alert("Failed to generate quiz. Please check settings.");
+      toast.error("Failed to generate quiz. Please check settings.");
     } finally {
       setLoading(false);
     }

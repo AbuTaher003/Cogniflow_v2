@@ -8,6 +8,8 @@ import {
   MapPin, Globe, Linkedin, Github, FileText, Sparkles, ChevronDown, Printer
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { hasUsage } from "@/lib/billing-client";
+import { toast } from "@/lib/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -445,6 +447,13 @@ export default function ResumePage() {
   async function handleCreateResume() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+
+    // Check usage limits (resumes: FREE=1, PRO=5, ELITE=unlimited)
+    const isAllowed = await hasUsage(user.id, "resumes");
+    if (!isAllowed) {
+      toast.error("You have reached the resume creation limit of your current plan. Please upgrade to create more resumes.");
+      return;
+    }
 
     const { data, error } = await supabase.from("resumes").insert({
       user_id: user.id, title: newTitle, template: newTemplate,

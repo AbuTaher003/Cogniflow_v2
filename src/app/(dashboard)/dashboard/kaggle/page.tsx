@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Trophy, Plus, Edit2, Trash2, Search, Database, BookOpen, BarChart3, Medal, Users, Calendar, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { FeatureGuard } from "@/components/billing/FeatureGuard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,7 +133,8 @@ export default function KaggleTrackerPage() {
   if (loading) return <div className="space-y-6"><Skeleton className="h-10 w-48 rounded-xl" /><Skeleton className="h-96 rounded-2xl" /></div>;
 
   return (
-    <div className="space-y-6">
+    <FeatureGuard feature="kaggle-tracker">
+      <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-white">Kaggle Tracker</h1>
@@ -268,6 +270,7 @@ export default function KaggleTrackerPage() {
           <DialogFooter><Button variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button><Button variant="primary" onClick={handleSave}>Save</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </FeatureGuard>
   );
 }

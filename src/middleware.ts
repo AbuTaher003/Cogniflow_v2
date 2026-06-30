@@ -28,6 +28,19 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
+  // 0. Super Admin Protection Middleware
+  if (pathname.startsWith("/admin")) {
+    if (!user) {
+      const redirectUrl = new URL("/sign-in", request.url);
+      redirectUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || "ataherrizon@gmail.com";
+    if (user.email !== superAdminEmail) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+  }
+
   // 1. If not logged in
   if (!user) {
     if (pathname.startsWith("/dashboard") || pathname.startsWith("/onboarding")) {
@@ -72,6 +85,7 @@ export const config = {
     "/onboarding/:path*",
     "/sign-in",
     "/sign-up",
-    "/auth/callback"
+    "/auth/callback",
+    "/admin/:path*"
   ]
 };

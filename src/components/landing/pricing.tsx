@@ -10,23 +10,46 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 const plans = [
   {
     name: "Free Sandbox",
-    price: "$0",
+    price: "৳0",
     description: "For students who want to track their basic schedule offline.",
-    items: ["3 Subjects & 15 Tasks", "Daily Habits & Streaks", "1 ATS Resume templates", "5 AI Assistant queries"],
+    items: [
+      "Up to 3 Active Subjects",
+      "Up to 15 Kanban Tasks",
+      "Up to 5 Notes in Notebooks",
+      "1 ATS Resume Template Export",
+      "5 AI Assistant Queries / Month"
+    ],
     featured: false
   },
   {
     name: "Pro Student",
-    price: "$4.99",
+    price: "৳400",
     description: "For active learners tracking coding and internship workflows.",
-    items: ["15 Subjects & 100 Tasks", "Competitive Programming Tracker", "Kaggle Competitions Tracker", "5 PDF Resume Exports", "100 AI Queries / Month"],
+    items: [
+      "Up to 15 Active Subjects",
+      "Up to 100 Kanban Tasks",
+      "Up to 50 Notes",
+      "Unlimited Resume Template Exports",
+      "100 AI Queries / Month",
+      "Competitive Programming Tracker",
+      "Kaggle Submissions Tracker",
+      "Habit Streaks Analytics"
+    ],
     featured: true
   },
   {
     name: "Academic Elite",
-    price: "$9.99",
+    price: "৳1000",
     description: "Total un-gated access to all premium modules and global tools.",
-    items: ["Unlimited subjects & tasks", "Unlimited AI Assistant Queries", "Unlimited Resumes & PDFs", "Global Announcements Feed", "Priority Support & Beta Tools"],
+    items: [
+      "Unlimited Academic Subjects",
+      "Unlimited Tasks & Notes",
+      "Unlimited Resume Builders",
+      "Unlimited AI Assistant Queries",
+      "Advanced Metrics Dashboard",
+      "Priority Support Channel",
+      "Early Access to Beta Tools"
+    ],
     featured: false
   }
 ];
@@ -84,7 +107,7 @@ export function Pricing() {
                   ))}
                   <Link href="/sign-up" className="block pt-4">
                     <Button className="w-full" variant={plan.featured ? "primary" : "secondary"} size="lg">
-                      {plan.name === "Free" ? "Start free" : "Upgrade now"}
+                      {plan.name.includes("Free") ? "Start free" : "Upgrade now"}
                     </Button>
                   </Link>
                 </CardContent>

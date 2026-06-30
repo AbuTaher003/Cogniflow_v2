@@ -11,6 +11,12 @@ create extension if not exists pgcrypto;
 -- ====================================================================
 -- 1. DROP EXISTING OBJECTS (Ensures clean execution from scratch)
 -- ====================================================================
+drop table if exists public.subscription_history cascade;
+drop table if exists public.payment_transactions cascade;
+drop table if exists public.payment_requests cascade;
+drop table if exists public.user_subscriptions cascade;
+drop table if exists public.subscription_plans cascade;
+drop table if exists public.subscription_features cascade;
 drop table if exists public.subscriptions cascade;
 drop table if exists public.feedback cascade;
 drop table if exists public.announcements cascade;
@@ -525,6 +531,122 @@ create table public.subscriptions (
   constraint subscriptions_unique_user unique (user_id)
 );
 
+-- ============================================
+-- BILLING MODULE TABLES
+-- ============================================
+
+-- Subscription Features Catalog
+create table if not exists public.subscription_features (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  description text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Subscription Plans
+create table if not exists public.subscription_plans (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  price numeric(10, 2) not null default 0.00 check (price >= 0.00),
+  duration_days integer not null check (duration_days >= 0),
+  features jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- User Subscriptions
+create table if not exists public.user_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  plan_id uuid not null references public.subscription_plans (id) on delete cascade,
+  status text not null default 'active',
+  started_at timestamptz not null default now(),
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint user_subscriptions_status_check check (status in ('active', 'expired', 'cancelled', 'past_due', 'pending')),
+  constraint user_subscriptions_dates_check check (expires_at is null or expires_at >= started_at),
+  constraint user_subscriptions_unique_user unique (user_id)
+);
+
+-- Payment Requests
+create table if not exists public.payment_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  plan_id uuid not null references public.subscription_plans (id) on delete cascade,
+  payment_method text not null,
+  transaction_id text not null unique,
+  sender_number text not null,
+  amount numeric(10, 2) not null check (amount > 0.00),
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint payment_requests_status_check check (status in ('pending', 'approved', 'rejected')),
+  constraint payment_requests_method_check check (payment_method in (
+    'bkash', 'nagad', 'rocket', 'upay',
+    'visa', 'mastercard', 'amex',
+    'dutch_bangla', 'islami_bank', 'brac_bank', 'city_bank', 'ebl', 'prime_bank',
+    'bank_asia', 'mtb', 'southeast_bank', 'pubali_bank', 'sonali_bank',
+    'janata_bank', 'agrani_bank', 'rupali_bank',
+    'nexus', 'qcash', 'sslcommerz'
+  ))
+);
+
+-- Payment Transactions
+create table if not exists public.payment_transactions (
+  id uuid primary key default gen_random_uuid(),
+  payment_request_id uuid not null references public.payment_requests (id) on delete cascade,
+  approved_by uuid references public.profiles (id) on delete set null,
+  approved_at timestamptz not null default now(),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint payment_transactions_request_unique unique (payment_request_id)
+);
+
+-- Subscription History
+create table if not exists public.subscription_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  previous_plan text,
+  current_plan text,
+  action text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Seed Default Features
+insert into public.subscription_features (name, slug, description)
+values
+  ('Subjects Limit', 'subjects-limit', 'Limit on the number of active academic subjects'),
+  ('Tasks Limit', 'tasks-limit', 'Limit on the number of tasks in the Kanban board'),
+  ('Notes Limit', 'notes-limit', 'Limit on the number of notes in notebook'),
+  ('Resumes Limit', 'resumes-limit', 'Limit on number of ATS resumes generated'),
+  ('AI Queries Limit', 'ai-queries-limit', 'Monthly limit for AI assistant queries'),
+  ('Competitive Programming Tracker', 'cp-tracker', 'Access to CP tracker dashboard and statistics'),
+  ('Kaggle Tracker', 'kaggle-tracker', 'Access to Kaggle submissions and competition tracker'),
+  ('Advanced Analytics', 'advanced-analytics', 'Advanced analytics on study habits and metrics'),
+  ('Unlimited AI Queries', 'unlimited-ai', 'Unlimited AI chat prompts and solutions'),
+  ('Priority Support', 'priority-support', 'Direct communication channel for admin support')
+on conflict (slug) do update set
+  name = excluded.name,
+  description = excluded.description;
+
+-- Seed Default Plans
+insert into public.subscription_plans (name, slug, price, duration_days, features)
+values
+  ('FREE', 'free', 0.00, 36500, '["subjects-limit", "tasks-limit", "notes-limit", "resumes-limit", "ai-queries-limit"]'::jsonb),
+  ('PRO', 'pro', 400.00, 30, '["subjects-limit", "tasks-limit", "notes-limit", "resumes-limit", "ai-queries-limit", "cp-tracker", "kaggle-tracker"]'::jsonb),
+  ('ELITE', 'elite', 1000.00, 30, '["subjects-limit", "tasks-limit", "notes-limit", "resumes-limit", "ai-queries-limit", "cp-tracker", "kaggle-tracker", "unlimited-ai", "advanced-analytics", "priority-support"]'::jsonb)
+on conflict (slug) do update set
+  name = excluded.name,
+  price = excluded.price,
+  duration_days = excluded.duration_days,
+  features = excluded.features;
+
+
 -- ====================================================================
 -- 4. INDEXES
 -- ====================================================================
@@ -570,6 +692,18 @@ create index if not exists idx_user_achievements_user_id on public.user_achievem
 create index if not exists idx_announcements_published on public.announcements (published, created_at desc);
 create index if not exists idx_feedback_user_id on public.feedback (user_id);
 create index if not exists idx_subscriptions_user_id on public.subscriptions (user_id);
+
+create index if not exists idx_user_subscriptions_user_id on public.user_subscriptions (user_id);
+create index if not exists idx_user_subscriptions_plan_id on public.user_subscriptions (plan_id);
+create index if not exists idx_user_subscriptions_status on public.user_subscriptions (status);
+create index if not exists idx_payment_requests_user_id on public.payment_requests (user_id);
+create index if not exists idx_payment_requests_plan_id on public.payment_requests (plan_id);
+create index if not exists idx_payment_requests_status on public.payment_requests (status);
+create index if not exists idx_payment_transactions_request_id on public.payment_transactions (payment_request_id);
+create index if not exists idx_payment_transactions_approved_by on public.payment_transactions (approved_by);
+create index if not exists idx_subscription_history_user_id on public.subscription_history (user_id);
+create index if not exists idx_subscription_history_created_at on public.subscription_history (created_at desc);
+
 
 -- ====================================================================
 -- 5. TRIGGERS
@@ -655,6 +789,166 @@ create trigger set_feedback_updated_at before update on public.feedback for each
 drop trigger if exists set_subscriptions_updated_at on public.subscriptions;
 create trigger set_subscriptions_updated_at before update on public.subscriptions for each row execute procedure public.set_updated_at();
 
+-- Billing Module Triggers & Functions
+create trigger set_subscription_features_updated_at before update on public.subscription_features for each row execute procedure public.set_updated_at();
+create trigger set_subscription_plans_updated_at before update on public.subscription_plans for each row execute procedure public.set_updated_at();
+create trigger set_user_subscriptions_updated_at before update on public.user_subscriptions for each row execute procedure public.set_updated_at();
+create trigger set_payment_requests_updated_at before update on public.payment_requests for each row execute procedure public.set_updated_at();
+create trigger set_payment_transactions_updated_at before update on public.payment_transactions for each row execute procedure public.set_updated_at();
+
+create or replace function public.handle_subscription_history_log()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  prev_slug text;
+  curr_slug text;
+  prev_price numeric(10,2);
+  curr_price numeric(10,2);
+  hist_action text;
+begin
+  select slug, price into curr_slug, curr_price
+  from public.subscription_plans
+  where id = new.plan_id;
+
+  if (TG_OP = 'INSERT') then
+    insert into public.subscription_history (user_id, previous_plan, current_plan, action)
+    values (new.user_id, null, curr_slug, 'subscribe');
+  elsif (TG_OP = 'UPDATE') then
+    select slug, price into prev_slug, prev_price
+    from public.subscription_plans
+    where id = old.plan_id;
+
+    if (old.plan_id != new.plan_id) then
+      if (curr_price > prev_price) then
+        hist_action := 'upgrade';
+      elsif (curr_price < prev_price) then
+        hist_action := 'downgrade';
+      else
+        hist_action := 'change';
+      end if;
+    elsif (old.status != new.status) then
+      if (new.status = 'cancelled') then
+        hist_action := 'cancel';
+      elsif (new.status = 'expired') then
+        hist_action := 'expire';
+      elsif (new.status = 'past_due') then
+        hist_action := 'past_due';
+      elsif (new.status = 'active') then
+        hist_action := 'renew';
+      else
+        hist_action := 'status_change';
+      end if;
+    else
+      hist_action := 'update';
+    end if;
+
+    if (old.plan_id != new.plan_id or old.status != new.status) then
+      insert into public.subscription_history (user_id, previous_plan, current_plan, action)
+      values (new.user_id, prev_slug, curr_slug, hist_action);
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_subscription_changed on public.user_subscriptions;
+create trigger on_subscription_changed
+after insert or update on public.user_subscriptions
+for each row execute procedure public.handle_subscription_history_log();
+
+create or replace function public.handle_payment_approval()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  plan_dur integer;
+  sub_expires timestamptz;
+begin
+  if (old.status != 'approved' and new.status = 'approved') then
+    select duration_days into plan_dur
+    from public.subscription_plans
+    where id = new.plan_id;
+
+    if (plan_dur is not null and plan_dur > 0) then
+      sub_expires := now() + (plan_dur || ' days')::interval;
+    else
+      sub_expires := null;
+    end if;
+
+    insert into public.user_subscriptions (user_id, plan_id, status, started_at, expires_at)
+    values (new.user_id, new.plan_id, 'active', now(), sub_expires)
+    on conflict (user_id)
+    do update set
+      plan_id = excluded.plan_id,
+      status = excluded.status,
+      started_at = excluded.started_at,
+      expires_at = excluded.expires_at,
+      updated_at = now();
+
+    insert into public.payment_transactions (payment_request_id, approved_by, approved_at, notes)
+    values (
+      new.id,
+      auth.uid(),
+      now(),
+      'Payment request approved by admin. Subscription activated.'
+    )
+    on conflict (payment_request_id) do nothing;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_payment_request_approved on public.payment_requests;
+create trigger on_payment_request_approved
+after update on public.payment_requests
+for each row execute procedure public.handle_payment_approval();
+
+-- Create trigger function to validate payment amount based on subscription plan (EXACT match check)
+create or replace function public.validate_payment_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  plan_slug text;
+begin
+  -- Only validate when creating a request or changing amount/plan
+  if (tg_op = 'INSERT' or (tg_op = 'UPDATE' and (new.amount is distinct from old.amount or new.plan_id is distinct from old.plan_id))) then
+    select slug into plan_slug
+    from public.subscription_plans
+    where id = new.plan_id;
+
+    if (plan_slug = 'pro') then
+      if (new.amount <> 400.00) then
+        raise exception 'Invalid payment amount. PRO subscription requires exactly ৳400.';
+      end if;
+    elsif (plan_slug = 'elite') then
+      if (new.amount <> 1000.00) then
+        raise exception 'Invalid payment amount. ELITE subscription requires exactly ৳1000.';
+      end if;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+-- Apply the trigger before INSERT or UPDATE on payment_requests
+drop trigger if exists tr_validate_payment_request on public.payment_requests;
+create trigger tr_validate_payment_request
+  before insert or update on public.payment_requests
+  for each row
+  execute procedure public.validate_payment_request();
+
+
 -- ====================================================================
 -- 6. DISABLE ROW LEVEL SECURITY (RLS OFF)
 -- ====================================================================
@@ -682,6 +976,31 @@ alter table public.user_achievements disable row level security;
 alter table public.announcements disable row level security;
 alter table public.feedback disable row level security;
 alter table public.subscriptions disable row level security;
+alter table public.subscription_features disable row level security;
+alter table public.subscription_plans disable row level security;
+alter table public.user_subscriptions disable row level security;
+alter table public.payment_requests disable row level security;
+alter table public.payment_transactions disable row level security;
+alter table public.subscription_history disable row level security;
+
+-- ============================================
+-- VERIFICATION HELPERS (RPC)
+-- ============================================
+create or replace function public.make_user_admin(user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set role = 'admin'
+  where id = user_id;
+end;
+$$;
+
+grant execute on function public.make_user_admin(uuid) to anon;
+grant execute on function public.make_user_admin(uuid) to authenticated;
 
 -- Finish transaction and apply all modifications
 COMMIT;
